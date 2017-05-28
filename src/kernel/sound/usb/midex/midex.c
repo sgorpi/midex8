@@ -42,12 +42,9 @@
 #define SB_MIDEX_PREFIX "snd-usb-midex: "
 
 #define SB_MIDEX_URB_BUFFER_SIZE 	64
-#define SB_MIDEX_NUM_URBS_PER_EP	3
+#define SB_MIDEX_NUM_URBS_PER_EP	7
 
 /* Timer periods (in ms) */
-// 0.02559692
-// avg 0.02559838 over 34000 packets
-// lets say 0.0256 ...
 //#define TIMER_PERIOD_TIMING_NS	(25598*1000)
 #define TIMER_PERIOD_TIMING_NS	(25600*1000)
 
@@ -188,7 +185,7 @@ static struct usb_driver sb_midex_driver;
 
 static const uint8_t sb_midex_cin_length[] = {
 	0, 0, 2, 3, 3, 1, 2, 3, 3, 3, 3, 3, 2, 2, 3, 1
-//  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f
+//	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f
 };
 
 
@@ -1097,6 +1094,8 @@ static void sb_midex_init_determine_type_and_name(
 {
 	char usb_path[32];
 
+	usb_make_path(midex->usbdev, usb_path, sizeof(usb_path));
+
 	switch(le16_to_cpu(midex->usbdev->descriptor.idProduct))
 	{
 	case SB_MIDEX8_PID1:
@@ -1105,7 +1104,7 @@ static void sb_midex_init_determine_type_and_name(
 		/* Let USB descriptor tell us what name this device has: */
 		strncpy(midex->card->shortname, midex->usbdev->product, sizeof(midex->card->shortname));
 		midex->card_type = SB_MIDEX_TYPE_8;
-		dev_info(&midex->usbdev->dev, SB_MIDEX_PREFIX "Recognized MIDEX8");
+		dev_info(&midex->usbdev->dev, SB_MIDEX_PREFIX "Recognized MIDEX8 at %s", usb_path);
 		break;
 	default:
 		/* Figure out if its a midex3, what PID...*/
@@ -1113,8 +1112,6 @@ static void sb_midex_init_determine_type_and_name(
 		midex->card_type = SB_MIDEX_TYPE_UNKNOWN;
 		break;
 	}
-
-	usb_make_path(midex->usbdev, usb_path, sizeof(usb_path));
 
 	snprintf(midex->card->longname, sizeof(midex->card->longname), "%s at %s",
 			midex->usbdev->product, /* product string as given by device */
