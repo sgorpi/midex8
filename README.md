@@ -4,7 +4,7 @@ This repository holds an (experimental) driver for the MIDEX8, both as kernel dr
 
 There are still some issues with the kernel driver: see below.
 
-in the 'doc' directory you will find some analysis of the protocol in text and in wireshark files.
+in the 'doc' directory you will find some [analysis of the protocol](blob/master/doc/analysis.md) in text and in wireshark files.
 
 ## Issues
 
