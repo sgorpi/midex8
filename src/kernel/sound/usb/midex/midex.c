@@ -81,8 +81,6 @@ enum sb_midex_type {
 }; /* card type */
 
 enum sb_midex_port_state {
-//	SB_MIDEX_PORT_STATE_NORMAL = 0,
-//	SB_MIDEX_PORT_STATE_SYSEX = 1,
 	STATE_UNKNOWN	= 0,
 	STATE_1PARAM	= 1,
 	STATE_2PARAM_1	= 2,
@@ -203,15 +201,6 @@ static const uint8_t sb_midex_cin_length[] = {
 static int sb_midex_submit_urb(struct sb_midex_urb_ctx* ctx, gfp_t flags, const char* function) {
 	int err = 0;
 
-	//ctx->active = true;
-	//ctx->urb->dev = ctx->midex->usbdev;
-	//ctx->urb->actual_length = 0; // explicitly reset to 0
-
-	if (usb_pipeout(ctx->urb->pipe) && ctx->urb->transfer_buffer_length == 0) {
-		dev_err(&ctx->urb->dev->dev, SB_MIDEX_PREFIX "usb_submit_urb: output of length 0 not allowed at %s\n", function);
-		return -1;
-	}
-
 	err = usb_submit_urb(ctx->urb, flags);
 
 	if (err < 0)
@@ -310,6 +299,7 @@ static int sb_midex_raw_midi_substream_close(struct snd_rawmidi_substream *subst
 
 	return 0;
 }
+
 
 /*********************************************************************************
  * MIDI input functions
@@ -464,7 +454,6 @@ static void sb_midex_usb_midi_input_to_raw_midi(
 
 static void sb_midex_usb_midi_input_complete(struct urb *urb) {
 	unsigned long flags;
-//	unsigned long flags_b;
 
 	struct sb_midex_urb_ctx *ctx = urb->context;
 	struct sb_midex *midex = ctx->midex;
@@ -481,20 +470,21 @@ static void sb_midex_usb_midi_input_complete(struct urb *urb) {
 	}
 
 	spin_lock_irqsave(&midex->timer_timing_lock, flags);
-//	spin_lock_irqsave(&midex->midi_out.lock, flags_b);
 
 	if (midex->midi_in.active && midex->timing_state == SB_MIDEX_TIMING_RUNNING) {
-		// for some reason, this urb sometimes also ends up at the output
+		// for some reason, an empty urb sometimes ends up at the timing output, so we use timer_timing_lock
 		sb_midex_submit_urb(ctx, GFP_ATOMIC, __func__);
+	} else {
+		ctx->active = false;
 	}
 
-//	spin_unlock_irqrestore(&midex->midi_out.lock, flags_b);
 	spin_unlock_irqrestore(&midex->timer_timing_lock, flags);
 }
 
 
 /*
  * Adds one USB MIDI packet to the output buffer.
+ * \note (Same the ALSA USB MIDI driver's snd_usbmidi_output_standard_packet(...))
  */
 static void sb_midex_usb_midi_output_packet(
 		struct urb *urb,
@@ -510,8 +500,10 @@ static void sb_midex_usb_midi_output_packet(
 }
 
 
-/*
+/**
  * Converts MIDI commands to USB MIDI packets.
+ *
+ * \note (Same the ALSA USB MIDI driver's snd_usbmidi_transmit_byte(...))
  */
 static void sb_midex_usb_midi_output_transmit_byte(
 		struct sb_midex_port *port,
@@ -618,7 +610,6 @@ static int sb_midex_usb_midi_output_from_raw_midi(struct sb_midex *midex, struct
 	uint8_t b;
 	struct sb_midex_port *midi_port;
 
-	// TODO: check: the device only seems to accept 8 bytes at a time, although the EP is 64 (SB_MIDEX_URB_BUFFER_SIZE)
 	for (i = 0; i < midex->midi_out.num_ports; ++i) {
 		port_nr = i;//(midex->midi_out.last_active_port + i) % midex->midi_out.num_ports;
 		midi_port = &midex->midi_out.ports[port_nr];
@@ -628,6 +619,7 @@ static int sb_midex_usb_midi_output_from_raw_midi(struct sb_midex *midex, struct
 		if (urb == NULL)
 			dev_info(&midex->usbdev->dev, SB_MIDEX_PREFIX "urb = NULL...\n");
 
+		// the device only seems to accept 8 bytes at a time, although the EP is 64 bytes (SB_MIDEX_URB_BUFFER_SIZE)
 		while ((urb->transfer_buffer_length + 3 < 8) &&
 				(midi_port->triggered > 0) && /* make sure it's triggered, otherwise it crashes */
 				(midi_port->substream->opened) &&
@@ -670,11 +662,13 @@ static void sb_midex_usb_midi_output(struct sb_midex *midex) {
 
 	if (!found_urb) {
 		dev_info(&midex->usbdev->dev, SB_MIDEX_PREFIX "midi out no free urb...\n");
-		/* unlink all but the last urb */
-		for (i = 0; i < SB_MIDEX_NUM_URBS_PER_EP - 1; ++i)
+		/* unlink all urbs...  */
+		for (i = 0; i < SB_MIDEX_NUM_URBS_PER_EP; ++i)
 			usb_unlink_urb(midex->midi_out.urbs[i].urb);
 	}
 	spin_unlock_irqrestore(&midex->midi_out.lock, flags);
+
+	/* Assume the completion handler gets called, and thus any unsent data still gets sent in the next round... */
 }
 
 
@@ -682,6 +676,7 @@ static void sb_midex_usb_midi_output_complete(struct urb *urb) {
 	/* lock EP, find urb, set urb to inactive, unlock */
 	struct sb_midex_urb_ctx *ctx = urb->context;
 	struct sb_midex *midex = ctx->midex;
+	unsigned long flags;
 
 	if (urb->status)
 		sb_midex_urb_show_error(urb, __func__);
@@ -691,9 +686,12 @@ static void sb_midex_usb_midi_output_complete(struct urb *urb) {
 		return;
 	}
 
+	spin_lock_irqsave(&midex->midi_out.lock, flags);
 	ctx->active = false;
+	spin_unlock_irqrestore(&midex->midi_out.lock, flags);
 
-	sb_midex_usb_midi_output(midex);
+	//sb_midex_usb_midi_output(midex);
+	tasklet_schedule(&midex->midi_out_tasklet);
 }
 
 
@@ -773,11 +771,6 @@ static enum hrtimer_restart sb_midex_timer_timing_callback(struct hrtimer *hrt) 
 	int i;
 	unsigned char *buffer;
 
-	// TODO: for some reason, for timing, not all submitted urbs complete with the timer period
-	// This might be due to the midi-in congesting the bus/EP/???, but
-	// the usb subsystem doesn't give any errors?
-	// Therefore, we allocate more urbs, and find a non-active one
-
 	spin_lock_irqsave(&midex->timer_timing_lock, flags);
 
 	/* unlink all still active urbs, it shouldn't take 25ms to send */
@@ -799,7 +792,6 @@ static enum hrtimer_restart sb_midex_timer_timing_callback(struct hrtimer *hrt) 
 		buffer[2] = 0;
 		buffer[3] = 0;
 
-		/* regardless of sending or not, we can set the length */
 		midex->timing_out_urb[i].urb->transfer_buffer_length = 4;
 
 		switch(midex->timing_state)
@@ -821,7 +813,7 @@ static enum hrtimer_restart sb_midex_timer_timing_callback(struct hrtimer *hrt) 
 			buffer[1] = 0xf5; /* stop */
 			sb_midex_submit_urb(&midex->timing_out_urb[i], GFP_ATOMIC, __func__);
 
-			/* TODO: cancel outstanding MIDI-in urbs*/
+			/* cancel outstanding MIDI-in urbs*/
 			sb_midex_usb_midi_input_stop(midex);
 
 			midex->timing_state = SB_MIDEX_TIMING_IDLE;
@@ -977,6 +969,8 @@ void sb_midex_timer_led_start(struct sb_midex *midex) {
 
 
 /**
+ * Init the device by sending some specific commands
+ *
  * \pre init_rawmidi and init_usb were successful
  */
 static int sb_midex_init_device(struct sb_midex *midex) {
@@ -1015,7 +1009,9 @@ init_device_error:
 	return err;
 }
 
-
+/**
+ * Allocate urbs, allocate dma buffers and fill the urb with the right data
+ */
 static int sb_midex_init_usb(struct sb_midex* midex) {
 	int i;
 	int err = usb_set_interface(midex->usbdev, 0, 0);
@@ -1066,6 +1062,10 @@ init_usb_error:
 }
 
 
+/**
+ * Get the input/output substreams and store them in our ports list.
+ * Also set the substream name
+ */
 static void sb_midex_init_rawmidi_substreams(struct sb_midex *midex) {
 	struct snd_rawmidi_substream *substream;
 	/* set name and reference in midex struct */
@@ -1141,6 +1141,13 @@ static int sb_midex_init_rawmidi(struct sb_midex *midex) {
 }
 
 
+/**
+ * Determine what type of MIDEX is connected.
+ * Depending on PID we can determine what firmware version the device is running,
+ * however, firmware updates are not supported at the moment.
+ *
+ * Maybe the MIDEX3 has the same protocol as the MIDEX8, let me know if that is the case and what PID
+ */
 static void sb_midex_init_determine_type_and_name(struct sb_midex* midex) {
 	char usb_path[32];
 
