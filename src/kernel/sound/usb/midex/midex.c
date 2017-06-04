@@ -619,8 +619,8 @@ static int sb_midex_usb_midi_output_from_raw_midi(struct sb_midex *midex, struct
 		if (urb == NULL)
 			dev_info(&midex->usbdev->dev, SB_MIDEX_PREFIX "urb = NULL...\n");
 
-		// the device only seems to accept 8 bytes at a time, although the EP is 64 bytes (SB_MIDEX_URB_BUFFER_SIZE)
-		while ((urb->transfer_buffer_length + 3 < 8) &&
+		// Have seen cases with up to 20 bytes sent in 1 packet. Assuming the full buffer can be used:
+		while ((urb->transfer_buffer_length + 3 < SB_MIDEX_URB_BUFFER_SIZE) &&
 				(midi_port->triggered > 0) && /* make sure it's triggered, otherwise it crashes */
 				(midi_port->substream->opened) &&
 				(snd_rawmidi_transmit(midi_port->substream, &b, 1) == 1))
@@ -661,10 +661,10 @@ static void sb_midex_usb_midi_output(struct sb_midex *midex) {
 	}
 
 	if (!found_urb) {
-		dev_info(&midex->usbdev->dev, SB_MIDEX_PREFIX "midi out no free urb...\n");
+		dev_info(&midex->usbdev->dev, SB_MIDEX_PREFIX "midi out has no free urb yet.\n");
 		/* unlink all urbs...  */
-		for (i = 0; i < SB_MIDEX_NUM_URBS_PER_EP; ++i)
-			usb_unlink_urb(midex->midi_out.urbs[i].urb);
+		/*for (i = 0; i < SB_MIDEX_NUM_URBS_PER_EP; ++i)
+			usb_unlink_urb(midex->midi_out.urbs[i].urb); */
 	}
 	spin_unlock_irqrestore(&midex->midi_out.lock, flags);
 
