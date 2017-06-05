@@ -823,7 +823,6 @@ static void sb_midex_usb_timing_output_complete(
 	struct sb_midex_urb_ctx *ctx = urb->context;
 	struct sb_midex *midex = ctx->midex;
 
-	spin_lock_irqsave(&midex->timer_timing_lock, flags);
 
 	if (urb->status)
 		sb_midex_urb_show_error(urb, __func__);
@@ -834,6 +833,8 @@ static void sb_midex_usb_timing_output_complete(
 				"no midex for timing output complete");
 		return;
 	}
+
+	spin_lock_irqsave(&midex->timer_timing_lock, flags);
 
 	ctx->active = false;
 
@@ -1125,7 +1126,7 @@ static void sb_midex_timer_led_callback(
 }
 
 
-void sb_midex_timer_timing_start(
+static void sb_midex_timer_timing_start(
 		struct sb_midex *midex)
 {
 	hrtimer_init(&(midex->timer_timing), CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -1137,7 +1138,7 @@ void sb_midex_timer_timing_start(
 }
 
 
-void sb_midex_timer_led_start(
+static void sb_midex_timer_led_start(
 		struct sb_midex *midex)
 {
 	setup_timer(&(midex->timer_led),
