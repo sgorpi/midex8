@@ -420,24 +420,28 @@ static void sb_midex_usb_midi_input_to_raw_midi(
 	for (i = 0; i < buf_len; i += 4) {
 		port = (buffer[i] >> 4) & 0x07;
 
-
 		status = buffer[i] & 0x0f;
 		switch(status) {
-			case 0x03: /* time info. We ignore it for now */
+			case 0x03: /* MIDEX time info. We ignore it (for now) */
 				out_len = 0;
 				break;
-			case 0x05: /* end of sysex, 1 byte */
-				out_len = 1;
+			case 0x0f:
+				switch (buffer[i+1]) {
+					case 0xf1:
+					case 0xf3:
+						out_len = 2;
+						break;
+					case 0xf2:
+						out_len = 3;
+						break;
+					default:
+						out_len = 1;
+						break;
+				}
 				break;
-			case 0x06: /* end of sysex, 2 bytes */
-				out_len = 2;
-				break;
-			case 0x07: /* end of sysex, 3 bytes */
-			case 0x04: /* sysex, 3 bytes */
 			default: /* anything else, 3 bytes*/
-				out_len = 3;
+				out_len = sb_midex_cin_length[status];
 				break;
-				// TODO: see if other inputs would need different length from sb_midex_cin_length
 		}
 
 		if ((out_len > 0) &&
