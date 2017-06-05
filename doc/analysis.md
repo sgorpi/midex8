@@ -102,3 +102,9 @@ XX is the LED state: 0xff = on, 0xfc = off
 SS is the side (left/right, or in/out), where side = 1 or 2, and 00 for 'off'
 
 
+## Things encountered during development
+
+* in firmware 0x1001 mode, sporadically the midi input doesn't show until a midi out message is sent.
+* Without the (timing?) messages on EP2(out), no midi input is received
+
+

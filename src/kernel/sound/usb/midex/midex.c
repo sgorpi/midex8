@@ -905,13 +905,13 @@ static void sb_midex_timer_led_callback(unsigned long data)
 		if (midex->led_state_gfx > 0) {
 			// off the previous led
 			led_nr = midex->led_state_gfx - 1;
-			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[0],     led_nr, false, false);
-			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[1], 7 - led_nr, false, true);
+			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[0],     led_nr, false, true);
+			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[1], 7 - led_nr, false, false);
 		}
 		if (midex->led_state_gfx < 8) {
 			led_nr = midex->led_state_gfx;
-			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[2],     led_nr,	true, false);
-			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[3], 7 - led_nr,	true, true);
+			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[2],     led_nr,	true, true);
+			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[3], 7 - led_nr,	true, false);
 		}
 
 		if (midex->led_state_gfx >= 8) {
@@ -925,10 +925,10 @@ static void sb_midex_timer_led_callback(unsigned long data)
 	case SB_MIDEX_LED_GFX_FILL_IN: /* turn leds on from inner to outer */
 		if (midex->led_state_gfx >= 0) {
 			led_nr = midex->led_state_gfx;
-			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[0],     led_nr, true, false);
-			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[1], 7 - led_nr, true, true);
+			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[0],     led_nr, true, true);
+			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[1], 7 - led_nr, true, false);
 		}
-		if (midex->led_state_gfx < 0) {
+		if (midex->led_state_gfx < -2) {
 			midex->led_state = SB_MIDEX_LED_GFX_RUN_IN; /* goto next graphics state */
 			midex->led_state_gfx = 7;
 		} else {
@@ -939,8 +939,8 @@ static void sb_midex_timer_led_callback(unsigned long data)
 	case SB_MIDEX_LED_GFX_RUN_IN: /* turn leds off from inner to outer */
 		if (midex->led_state_gfx >= 0) {
 			led_nr = midex->led_state_gfx;
-			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[0],     led_nr, false, false);
-			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[1], 7 - led_nr, false, true);
+			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[0],     led_nr, false, true);
+			sb_midex_usb_led_fill_and_send_command(&midex->led_commands_urb[1], 7 - led_nr, false, false);
 		}
 		if (midex->led_state_gfx < 0) {
 			midex->led_state = SB_MIDEX_LED_RUNNING; /* Done with the fancy graphics */
