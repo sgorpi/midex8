@@ -27,6 +27,7 @@
 #include <linux/usb.h>
 #include <linux/usb/audio.h>
 
+#include <linux/wait.h>
 #include <linux/ktime.h>
 #include <linux/timer.h>
 #include <linux/hrtimer.h>
@@ -155,6 +156,9 @@ struct sb_midex {
 
 	/* MIDI */
 	struct tasklet_struct midi_out_tasklet;
+	wait_queue_head_t drain_wait;
+	unsigned int drain_urbs;
+
 	/* EP 2 in */
 	struct sb_midex_endpoint midi_in;
 	/* EP 4 out */
@@ -178,6 +182,8 @@ struct sb_midex {
 
 static void sb_midex_usb_midi_input_start(struct sb_midex *midex);
 static void sb_midex_usb_midi_input_stop(struct sb_midex *midex);
+static void sb_midex_usb_midi_output_drain(
+		struct snd_rawmidi_substream *substream);
 
 
 
@@ -406,6 +412,7 @@ static struct snd_rawmidi_ops sb_midex_raw_midi_output = {
 	.open =    sb_midex_raw_midi_output_open,
 	.close =   sb_midex_raw_midi_output_close,
 	.trigger = sb_midex_raw_midi_output_trigger,
+	.drain =   sb_midex_usb_midi_output_drain,
 };
 
 
@@ -764,15 +771,6 @@ static void sb_midex_usb_midi_output(
 		}
 	}
 
-	if (!found_urb) {
-		dev_info(&midex->usbdev->dev,
-				SB_MIDEX_PREFIX
-				"midi out has no free urb yet.\n");
-		/* unlink all urbs...  removed for now, seems OK */
-		/* for (i = 0; i < SB_MIDEX_NUM_URBS_PER_EP; ++i)
-		 *	usb_unlink_urb(midex->midi_out.urbs[i].urb);
-		 */
-	}
 	spin_unlock_irqrestore(&midex->midi_out.lock, flags);
 
 	/* Assume the completion handler gets called, and thus any unsent
@@ -799,10 +797,51 @@ static void sb_midex_usb_midi_output_complete(
 
 	spin_lock_irqsave(&midex->midi_out.lock, flags);
 	ctx->active = false;
+	if (unlikely(midex->drain_urbs))
+		wake_up(&midex->drain_wait);
 	spin_unlock_irqrestore(&midex->midi_out.lock, flags);
 
 	/* sb_midex_usb_midi_output(midex); which is better? */
 	tasklet_schedule(&midex->midi_out_tasklet);
+}
+
+
+static void sb_midex_usb_midi_output_drain(
+		struct snd_rawmidi_substream *substream)
+{
+	struct sb_midex *midex = substream->rmidi->private_data;
+	unsigned int i;
+	DEFINE_WAIT(wait);
+	long timeout = msecs_to_jiffies(50);
+
+	/*
+	 * The substream buffer is empty, but some data might still be in the
+	 * currently active URBs, so we have to wait for those to complete.
+	 */
+	spin_lock_irq(&midex->midi_out.lock);
+	midex->drain_urbs = 0;
+	for (i = 0; i < SB_MIDEX_NUM_URBS_PER_EP; ++i) {
+		if (midex->midi_out.urbs[i].active)
+			midex->drain_urbs |= (1 << i);
+	}
+	if (midex->drain_urbs) {
+		do {
+			prepare_to_wait(&midex->drain_wait, &wait,
+					TASK_UNINTERRUPTIBLE);
+			spin_unlock_irq(&midex->midi_out.lock);
+
+			timeout = schedule_timeout(timeout);
+
+			spin_lock_irq(&midex->midi_out.lock);
+			for (i = 0; i < SB_MIDEX_NUM_URBS_PER_EP; ++i) {
+				if (!midex->midi_out.urbs[i].active)
+					midex->drain_urbs &= ~(1 << i);
+			}
+		} while (midex->drain_urbs && timeout);
+
+		finish_wait(&midex->drain_wait, &wait);
+	}
+	spin_unlock_irq(&midex->midi_out.lock);
 }
 
 
@@ -1435,6 +1474,10 @@ static struct sb_midex *sb_midex_init_midex_data_struct(
 	tasklet_init(&midex->midi_out_tasklet,
 			sb_midex_usb_midi_output_tasklet, (unsigned long)midex);
 
+	init_waitqueue_head(&midex->drain_wait);
+	midex->drain_urbs = 0;
+
+
 	/* clear ports mem */
 	for (i = 0; i < 8; ++i) {
 		midex->midi_in.ports[i].substream = NULL;
@@ -1594,6 +1637,11 @@ static void sb_midex_drv_disconnect(
 	del_timer_sync(&(midex->timer_led));
 	hrtimer_cancel(&(midex->timer_timing));
 	tasklet_kill(&(midex->midi_out_tasklet));
+
+	if (midex->drain_urbs) {
+		midex->drain_urbs = 0;
+		wake_up(&midex->drain_wait);
+	}
 
 	mutex_lock(&devices_mutex);
 
