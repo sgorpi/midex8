@@ -2,7 +2,7 @@
 
 This repository holds an (experimental) driver for the Steinberg MIDEX8, both as linux kernel driver, using ALSA, and as libusb demo application. The ALSA driver exposes the different physical ports as raw midi subdevices.
 
-In the [src/kernel/](source/kernel/) directory you will find `build.sh`, a script to build the module. The -h option for help.
+In the [src/kernel/](src/kernel/) directory you will find `build.sh`, a script to build the module. The -h option for help.
 
 First, you need to install your current kernel's sources and build dependencies using, e.g.:
 ```
