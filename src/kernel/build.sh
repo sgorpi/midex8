@@ -10,7 +10,7 @@ Usage: $0 <options>
 	Compile the midex module
 
 Options:
-	-d	install kernel and build dependencies
+	-d	install kernel sources and build dependencies
 	-h	this help
 	-i	install module in /lib/modules/`uname -r`
 	-k	set the kernel source directory
@@ -117,7 +117,12 @@ make O=$MODULE_DIR outputmakefile
 make O=$MODULE_DIR archprepare
 make O=$MODULE_DIR prepare
 make O=$MODULE_DIR modules SUBDIRS=scripts
-make O=$MODULE_DIR modules SUBDIRS=$MODULE_DIR/sound/usb/midex/
+if [ -e ./scripts/checkpatch.pl ]
+then
+	# some code (style) checking:
+	./scripts/checkpatch.pl -f sound/usb/midex/midex.c 
+fi
+make C=1 O=$MODULE_DIR modules SUBDIRS=$MODULE_DIR/sound/usb/midex/
 
 ##############################################
 ### install/remove module from /lib/modules
