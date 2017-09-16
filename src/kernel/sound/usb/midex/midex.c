@@ -702,16 +702,13 @@ static int sb_midex_usb_midi_output_from_raw_midi(
 		struct urb *urb)
 {
 	int port_index;
-	int port_nr = 0;
 	uint8_t b;
 	struct sb_midex_port *midi_port;
 
 	for (port_index = 0;
 			port_index < midex->midi_out.num_ports;
 			++port_index) {
-		port_nr = (midex->midi_out.last_active_port + port_index) %
-				midex->midi_out.num_ports;
-		midi_port = &midex->midi_out.ports[port_nr];
+		midi_port = &midex->midi_out.ports[port_index];
 
 		if (midi_port->substream == NULL)
 			dev_info(&midex->usbdev->dev,
@@ -722,23 +719,24 @@ static int sb_midex_usb_midi_output_from_raw_midi(
 					SB_MIDEX_PREFIX
 					"urb = NULL...\n");
 
+		if ((midi_port->triggered == 0) ||
+				!(midi_port->substream->opened))
+			continue;
 		/* Have seen cases with up to 20 bytes sent in 1 packet.
-		 * Assuming the full buffer can be used:
+		 * Assuming at least half the buffer can be used:
 		 */
-		while ((urb->transfer_buffer_length + 3
-				< SB_MIDEX_URB_BUFFER_SIZE) &&
-				(midi_port->triggered > 0) &&
-				(midi_port->substream->opened) &&
-				(snd_rawmidi_transmit(
-						midi_port->substream,
-						&b, 1) == 1)) {
+		while (urb->transfer_buffer_length + 3
+				< (SB_MIDEX_URB_BUFFER_SIZE/2)) {
+			if (snd_rawmidi_transmit(
+					midi_port->substream,
+					&b, 1) != 1) {
+				midi_port->triggered = 0;
+				break;
+			}
 			sb_midex_usb_midi_output_transmit_byte(
 					midi_port, b, urb);
 		}
 	}
-	/* give the next port some attention the next round: */
-	midex->midi_out.last_active_port++;
-	midex->midi_out.last_active_port %= midex->midi_out.num_ports;
 
 	return 0;
 }
@@ -811,8 +809,8 @@ static void sb_midex_usb_midi_output_complete(
 	}
 	spin_unlock_irqrestore(&midex->midi_out.lock, flags);
 
-	/* sb_midex_usb_midi_output(midex); which is better? */
-	tasklet_schedule(&midex->midi_out_tasklet);
+	sb_midex_usb_midi_output(midex); /* which is better? */
+	/* tasklet_schedule(&midex->midi_out_tasklet); */
 }
 
 
