@@ -184,7 +184,8 @@ static void sb_midex_usb_midi_input_start(struct sb_midex *midex);
 static void sb_midex_usb_midi_input_stop(struct sb_midex *midex);
 static void sb_midex_usb_midi_output_drain(
 		struct snd_rawmidi_substream *substream);
-
+static enum hrtimer_restart sb_midex_timer_timing_callback(
+		struct hrtimer *hrt);
 
 
 /*******************************************************************
@@ -319,9 +320,18 @@ static int sb_midex_raw_midi_substream_open(
 	midex->num_used_substreams++;
 
 	if (midex->num_used_substreams > 0 &&
-			midex->timing_state == SB_MIDEX_TIMING_IDLE)
+			midex->timing_state == SB_MIDEX_TIMING_IDLE) {
 		midex->timing_state = SB_MIDEX_TIMING_START;
-	spin_unlock_irqrestore(&midex->timer_timing_lock, flags);
+		spin_unlock_irqrestore(&midex->timer_timing_lock, flags);
+
+		/*
+		 * some programs start sending right after opening,
+		 * and we need to have sent the timing start message before that
+		 */
+		sb_midex_timer_timing_callback(&midex->timer_timing);
+	} else {
+		spin_unlock_irqrestore(&midex->timer_timing_lock, flags);
+	}
 
 	return 0;
 }
