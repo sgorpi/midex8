@@ -1,8 +1,10 @@
 #!/bin/bash
 
 #
-KERNEL_SOURCE_DIR=/home/hedde/Projects/ubuntu-xenial
-MODULE_DIR=/home/hedde/Projects/midex/src/kernel/
+MODULE_DIR=$PWD
+KERNEL_VERSION=`uname -r | sed 's/-.\+//'`
+
+source get_kernel_source_dir.sh
 
 rm -f $MODULE_DIR/.config
 rm -f $MODULE_DIR/Module.symvers
@@ -14,5 +16,6 @@ rm -rf $MODULE_DIR/kernel/
 rm -rf $MODULE_DIR/scripts/
 
 rm -f $MODULE_DIR/source
+
 
 

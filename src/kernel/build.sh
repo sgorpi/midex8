@@ -20,7 +20,6 @@ Options:
 
 
 MODULE_DIR=$PWD
-KERNEL_VERSION=`uname -r | sed 's/-.\+//'`
 
 DO_INSTALL=
 DO_UNINSTALL=
@@ -65,42 +64,9 @@ then
 	sudo apt-get build-dep linux-image-$(uname -r)
 fi
 
-##############################################
-### Try to establish where the kernel sources are
-##############################################
-# first locally:
-if [ ! -e "$KERNEL_SOURCE_DIR" ]
-then
-	KERNEL_SOURCE_DIR=`find $PWD -maxdepth 1 -type d -name "linux-*"`
-fi
 
-# if not existing, then maybe it is a clone from an ubuntu repo
-if [ ! -e "$KERNEL_SOURCE_DIR" ]
-then
-	KERNEL_SOURCE_DIR=`find $PWD -maxdepth 1 -type d -name "ubuntu-*"`
-fi
+source get_kernel_source_dir.sh
 
-# or the sources installed in a package (try to match uname -r)
-if [ ! -e "$KERNEL_SOURCE_DIR" ]
-then
-	KERNEL_SOURCE_DIR=`find /usr/src/ -maxdepth 1 -type d -name "linux-$KERNEL_VERSION*"`
-fi
-
-# check if we asked the user before:
-if [ ! -e "$KERNEL_SOURCE_DIR" ]
-then
-	if [ -e "build.sh.cfg" ]
-	then
-		KERNEL_SOURCE_DIR=`cat build.sh.cfg`
-	fi
-fi	
-# and if we still don't know, ask the user
-if [ ! -e "$KERNEL_SOURCE_DIR" ]
-then
-	echo "Where are the kernel sources located?"
-	read KERNEL_SOURCE_DIR
-	echo "$KERNEL_SOURCE_DIR" > build.sh.cfg
-fi
 
 echo "Using kernel sources in $KERNEL_SOURCE_DIR"
 echo ""
@@ -117,12 +83,17 @@ make O=$MODULE_DIR outputmakefile
 make O=$MODULE_DIR archprepare
 make O=$MODULE_DIR prepare
 make O=$MODULE_DIR modules SUBDIRS=scripts
+
 if [ -e ./scripts/checkpatch.pl ]
 then
 	# some code (style) checking:
-	./scripts/checkpatch.pl -f sound/usb/midex/midex.c 
+	echo "Running ./scripts/checkpatch.pl:"
+	./scripts/checkpatch.pl -f $MODULE_DIR/sound/usb/midex/midex.c 
 fi
+
+# actual build:
 make C=1 O=$MODULE_DIR modules SUBDIRS=$MODULE_DIR/sound/usb/midex/
+
 
 ##############################################
 ### install/remove module from /lib/modules
@@ -139,6 +110,17 @@ then
 	echo "Installing snd-usb-midex.ko in /lib/modules/`uname -r`/kernel/sound/usb/midex/"
 	sudo mkdir -p /lib/modules/`uname -r`/kernel/sound/usb/midex/
 	sudo cp $MODULE_DIR/sound/usb/midex/snd-usb-midex.ko /lib/modules/`uname -r`/kernel/sound/usb/midex/
+
+	
+	if [ -e /etc/modules-load.d/ ]
+	then
+		echo "Adding module to /etc/modules-load.d/ ..."
+		sudo sh -c 'echo snd-usb-midex > /etc/modules-load.d/midex.conf'
+	elif [ -e /etc/modules ]
+	then
+		echo "Adding module to /etc/modules ..."
+		sudo sh -c 'echo snd-usb-midex >> /etc/modules'
+	fi
 fi
 
 if [ -n "$DO_INSTALL" -o -n "$DO_UNINSTALL" ]
@@ -146,3 +128,11 @@ then
 	echo "Running depmod..."
 	sudo depmod
 fi
+
+if [ -n "$DO_INSTALL" ]
+then
+	echo ""
+	echo "### Run the following to use the driver manually:"
+	echo "sudo modprobe snd-usb-midex"
+fi
+
