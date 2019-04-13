@@ -1052,9 +1052,9 @@ static int sb_midex_usb_led_fill_and_send_command(
 
 
 static void sb_midex_timer_led_callback(
-		unsigned long data)
+		struct timer_list *t)
 {
-	struct sb_midex *midex = (struct sb_midex *) data;
+	struct sb_midex *midex = from_timer(midex, t, timer_led);
 	unsigned char *buffer;
 	int ret;
 	unsigned char led_nr;
@@ -1195,8 +1195,7 @@ static void sb_midex_timer_timing_start(
 static void sb_midex_timer_led_start(
 		struct sb_midex *midex)
 {
-	setup_timer(&(midex->timer_led),
-			sb_midex_timer_led_callback, (unsigned long)midex);
+	timer_setup(&(midex->timer_led), sb_midex_timer_led_callback, 0);
 	mod_timer(&(midex->timer_led),
 			jiffies +
 			msecs_to_jiffies(TIMER_PERIOD_LED_INACTIVE_MS));

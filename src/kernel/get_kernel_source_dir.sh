@@ -1,6 +1,7 @@
 #!/bin/bash
 
 KERNEL_VERSION=`uname -r | sed 's/-.\+//'`
+echo "Version: $KERNEL_VERSION"
 
 ##############################################
 ### Try to establish where the kernel sources are
@@ -21,6 +22,12 @@ fi
 if [ ! -e "$KERNEL_SOURCE_DIR" ]
 then
 	KERNEL_SOURCE_DIR=`find /usr/src/ -maxdepth 1 -type d -name "linux-$KERNEL_VERSION*"`
+fi
+
+# or the sources installed in a package (try to match uname -r)
+if [ ! -e "$KERNEL_SOURCE_DIR" ]
+then
+	KERNEL_SOURCE_DIR=`find /usr/src/ -maxdepth 1 -type d -name "linux-source-$KERNEL_VERSION*"`
 fi
 
 # check if we asked the user before:
