@@ -17,5 +17,8 @@ rm -rf $MODULE_DIR/scripts/
 
 rm -f $MODULE_DIR/source
 
-
-
+rm -f $MODULE_DIR/sound/usb/midex/*.o*
+rm -f $MODULE_DIR/sound/usb/midex/*.ko
+rm -f $MODULE_DIR/sound/usb/midex/*.mod.c
+rm -f $MODULE_DIR/sound/usb/midex/Module.symvers
+rm -f $MODULE_DIR/sound/usb/midex/modules.order

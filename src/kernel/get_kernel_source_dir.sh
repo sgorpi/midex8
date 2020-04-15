@@ -12,11 +12,13 @@ then
 	KERNEL_SOURCE_DIR=`find $PWD -maxdepth 1 -type d -name "linux-*"`
 fi
 
+
 # if not existing, then maybe it is a clone from an ubuntu repo
 if [ ! -e "$KERNEL_SOURCE_DIR" ]
 then
 	KERNEL_SOURCE_DIR=`find $PWD -maxdepth 1 -type d -name "ubuntu-*"`
 fi
+
 
 # or the sources installed in a package (try to match uname -r)
 if [ ! -e "$KERNEL_SOURCE_DIR" ]
@@ -24,20 +26,42 @@ then
 	KERNEL_SOURCE_DIR=`find /usr/src/ -maxdepth 1 -type d -name "linux-$KERNEL_VERSION*"`
 fi
 
+
 # or the sources installed in a package (try to match uname -r)
 if [ ! -e "$KERNEL_SOURCE_DIR" ]
 then
 	KERNEL_SOURCE_DIR=`find /usr/src/ -maxdepth 1 -type d -name "linux-source-$KERNEL_VERSION*"`
 fi
 
+
+# or the headers only
+if [ ! -e "$KERNEL_SOURCE_DIR" ]
+then
+	KERNEL_SOURCE_DIR=/usr/src/linux-headers-$(uname -r)
+	KERNEL_HEADERS=$KERNEL_SOURCE_DIR
+fi
+
+
+# or the headers only
+if [ ! -e "$KERNEL_SOURCE_DIR" ]
+then
+	KERNEL_SOURCE_DIR=`find /usr/src/ -maxdepth 1 -type d -name "linux-headers-$KERNEL_VERSION*"`
+	KERNEL_HEADERS=$KERNEL_SOURCE_DIR
+fi
+
+
 # check if we asked the user before:
 if [ ! -e "$KERNEL_SOURCE_DIR" ]
 then
+	unset KERNEL_HEADERS
+
 	if [ -e "build.sh.cfg" ]
 	then
 		KERNEL_SOURCE_DIR=`cat build.sh.cfg`
 	fi
 fi	
+
+
 # and if we still don't know, ask the user
 if [ ! -e "$KERNEL_SOURCE_DIR" ]
 then
