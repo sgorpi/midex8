@@ -63,6 +63,7 @@
  */
 #define SB_MIDEX8_PID1 0x1010
 #define SB_MIDEX8_PID2 0x1001
+#define SB_MIDEX8_PID3 0x1000
 
 /*******************************************************************
  * Type definitions
@@ -71,6 +72,7 @@
 static struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID1) },
 	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID2) },
+	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID3) },
 	{ },
 };
 
@@ -1423,20 +1425,21 @@ static void sb_midex_init_determine_type_and_name(
 
 	usb_make_path(midex->usbdev, usb_path, sizeof(usb_path));
 
+	strncpy(midex->card->shortname, midex->usbdev->product,
+			sizeof(midex->card->shortname));
+
 	switch (le16_to_cpu(midex->usbdev->descriptor.idProduct)) {
 	case SB_MIDEX8_PID1:
 		dev_info(&midex->usbdev->dev,
 				SB_MIDEX_PREFIX
 				"Firmware update not implemented.");
-	case SB_MIDEX8_PID2:
-		/* Device name from USB descriptor: */
-		strncpy(midex->card->shortname, midex->usbdev->product,
-				sizeof(midex->card->shortname));
 		midex->card_type = SB_MIDEX_TYPE_8;
-		dev_info(&midex->usbdev->dev,
-				SB_MIDEX_PREFIX
-				"Recognized MIDEX8 at %s",
-				usb_path);
+		break;
+	case SB_MIDEX8_PID2:
+		midex->card_type = SB_MIDEX_TYPE_8;
+		break;
+	case SB_MIDEX8_PID3:
+		midex->card_type = SB_MIDEX_TYPE_8;
 		break;
 	default:
 		/* Figure out if its a midex3, what PID...*/
@@ -1446,10 +1449,16 @@ static void sb_midex_init_determine_type_and_name(
 		break;
 	}
 
+	/* Device name from USB descriptor: */
 	snprintf(midex->card->longname, sizeof(midex->card->longname),
 			"%s at %s",
 			midex->usbdev->product, /* as given by device */
 			usb_path);
+	dev_info(&midex->usbdev->dev,
+			SB_MIDEX_PREFIX
+			"Recognized MIDEX: %s",
+			midex->card->longname
+			);
 }
 
 
