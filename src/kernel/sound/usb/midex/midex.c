@@ -1425,9 +1425,6 @@ static void sb_midex_init_determine_type_and_name(
 
 	usb_make_path(midex->usbdev, usb_path, sizeof(usb_path));
 
-	strncpy(midex->card->shortname, midex->usbdev->product,
-			sizeof(midex->card->shortname));
-
 	switch (le16_to_cpu(midex->usbdev->descriptor.idProduct)) {
 	case SB_MIDEX8_PID1:
 		dev_info(&midex->usbdev->dev,
@@ -1445,15 +1442,23 @@ static void sb_midex_init_determine_type_and_name(
 		/* Figure out if its a midex3, what PID...*/
 		strncpy(midex->card->shortname, "MIDEXxxx",
 				sizeof(midex->card->shortname));
+		strncpy(midex->card->longname, "Unknown MIDEXxxx",
+				sizeof(midex->card->longname));
 		midex->card_type = SB_MIDEX_TYPE_UNKNOWN;
 		break;
 	}
 
-	/* Device name from USB descriptor: */
-	snprintf(midex->card->longname, sizeof(midex->card->longname),
-			"%s at %s",
-			midex->usbdev->product, /* as given by device */
-			usb_path);
+	if (midex->usbdev->product != NULL)
+	{
+		strncpy(midex->card->shortname, midex->usbdev->product,
+				sizeof(midex->card->shortname));
+		/* Device name from USB descriptor: */
+		snprintf(midex->card->longname, sizeof(midex->card->longname),
+				"%s at %s",
+				midex->usbdev->product, /* as given by device */
+				usb_path);
+	}
+
 	dev_info(&midex->usbdev->dev,
 			SB_MIDEX_PREFIX
 			"Recognized MIDEX: %s",
