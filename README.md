@@ -4,10 +4,10 @@ This repository holds an (experimental) driver for the Steinberg MIDEX8, both as
 
 In the [src/kernel/](src/kernel/) directory you will find `build.sh`, a script to build the module. The -h option for help.
 
-First, you need to install your current kernel's sources and build dependencies using, e.g.:
+First, you need to install your current kernel's headers and build essentials using, e.g.:
 ```
-sudo apt-get source linux-image-$(uname -r)
-sudo apt-get build-dep linux-image-$(uname -r)
+sudo apt-get linux-headers-$(uname -r)
+sudo apt-get build-essential
 ```
 Then, use the build script to execute the commands needed to build the module (following this guide: https://wiki.ubuntu.com/Kernel/Dev/KernelModuleRebuild ).
 
@@ -22,7 +22,7 @@ If you have a MIDEX3, I would love to get some USB raw packets monitoring / pcap
 
 #### Normal machine
 
-So far I haven't found any issues on my real machine (with Ubuntu 16.04 and a 4.4.0 kernel).
+So far I haven't found any issues on my real machine (with Ubuntu 16.04 and a 4.4.0 kernel or with Ubuntu 20.04 and a 5.8.0 kernel).
 
 #### Virtualbox
 
