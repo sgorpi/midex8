@@ -1397,7 +1397,7 @@ static int sb_midex_init_rawmidi(
 	if (ret < 0)
 		return ret;
 
-	strlcpy(rmidi->name, midex->card->shortname, sizeof(rmidi->name));
+	strscpy(rmidi->name, midex->card->shortname, sizeof(rmidi->name));
 
 	rmidi->info_flags = SNDRV_RAWMIDI_INFO_DUPLEX;
 	rmidi->private_data = midex;
@@ -1460,9 +1460,9 @@ static void sb_midex_init_determine_type_and_name(
 		break;
 	default:
 		/* Unknown. Figure out what PID/config etc...*/
-		strncpy(midex->card->shortname, "MIDEXxxx",
+		strscpy(midex->card->shortname, "MIDEXxxx",
 				sizeof(midex->card->shortname));
-		strncpy(midex->card->longname, "Unknown MIDEXxxx",
+		strscpy(midex->card->longname, "Unknown MIDEXxxx",
 				sizeof(midex->card->longname));
 		midex->card_type = SB_MIDEX_TYPE_UNKNOWN;
 		break;
@@ -1470,7 +1470,7 @@ static void sb_midex_init_determine_type_and_name(
 
 	if (midex->usbdev->product != NULL)
 	{
-		strncpy(midex->card->shortname, midex->usbdev->product,
+		strscpy(midex->card->shortname, midex->usbdev->product,
 				sizeof(midex->card->shortname));
 		/* Device name from USB descriptor: */
 		snprintf(midex->card->longname, sizeof(midex->card->longname),
@@ -1662,7 +1662,7 @@ static int sb_midex_drv_probe(
 		goto probe_error;
 
 	snd_card_set_dev(card, &interface->dev);
-	strncpy(card->driver, "snd-usb-midex", sizeof(card->driver));
+	strscpy(card->driver, "snd-usb-midex", sizeof(card->driver));
 
 	usb_set_intfdata(interface, midex);
 	set_bit(card_index, devices_used);
