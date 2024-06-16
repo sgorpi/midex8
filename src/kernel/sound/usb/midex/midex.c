@@ -17,6 +17,7 @@
 
 #include <linux/kernel.h>
 #include <linux/errno.h>
+#include <linux/types.h>
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/module.h>
@@ -37,6 +38,7 @@
 #include <sound/initval.h>
 #include <sound/rawmidi.h>
 #include <sound/asound.h>
+
 
 /*******************************************************************
  * Defines
@@ -61,18 +63,24 @@
  *
  * Also, PID1 seems to imply: reflash firmware
  */
-#define SB_MIDEX8_PID1 0x1010
-#define SB_MIDEX8_PID2 0x1001
-#define SB_MIDEX8_PID3 0x1000
+ 
+#define SB_MIDEX8_PID_OLD_FIRMWARE 0x1010
+#define SB_MIDEX8_PID_NEW_FIRMWARE 0x1001
+#define SB_MIDEX8_PID_NO_FIRMWARE  0x1000
+
+#define SB_MIDEX3_PID_NO_FIRMWARE  0x1100
+#define SB_MIDEX3_PID_NEW_FIRMWARE 0x1101
 
 /*******************************************************************
  * Type definitions
  *******************************************************************/
 
 static struct usb_device_id id_table[] = {
-	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID1) },
-	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID2) },
-	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID3) },
+	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID_NEW_FIRMWARE) },
+	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID_OLD_FIRMWARE) },
+	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID_NO_FIRMWARE) },
+	{ USB_DEVICE(0x0a4e, SB_MIDEX3_PID_NEW_FIRMWARE) },
+	{ USB_DEVICE(0x0a4e, SB_MIDEX3_PID_NO_FIRMWARE) },
 	{ },
 };
 
@@ -1389,7 +1397,7 @@ static int sb_midex_init_rawmidi(
 	if (ret < 0)
 		return ret;
 
-	strlcpy(rmidi->name, midex->card->shortname, sizeof(rmidi->name));
+	strscpy(rmidi->name, midex->card->shortname, sizeof(rmidi->name));
 
 	rmidi->info_flags = SNDRV_RAWMIDI_INFO_DUPLEX;
 	rmidi->private_data = midex;
@@ -1426,23 +1434,35 @@ static void sb_midex_init_determine_type_and_name(
 	usb_make_path(midex->usbdev, usb_path, sizeof(usb_path));
 
 	switch (le16_to_cpu(midex->usbdev->descriptor.idProduct)) {
-	case SB_MIDEX8_PID1:
+	case SB_MIDEX8_PID_OLD_FIRMWARE:
 		dev_info(&midex->usbdev->dev,
 				SB_MIDEX_PREFIX
 				"Firmware update not implemented.");
 		midex->card_type = SB_MIDEX_TYPE_8;
 		break;
-	case SB_MIDEX8_PID2:
+	case SB_MIDEX8_PID_NEW_FIRMWARE:
 		midex->card_type = SB_MIDEX_TYPE_8;
 		break;
-	case SB_MIDEX8_PID3:
+	case SB_MIDEX8_PID_NO_FIRMWARE:
+		dev_info(&midex->usbdev->dev,
+				SB_MIDEX_PREFIX
+				"Firmware update not implemented.");
 		midex->card_type = SB_MIDEX_TYPE_8;
+		break;
+	case SB_MIDEX3_PID_NEW_FIRMWARE:
+		midex->card_type = SB_MIDEX_TYPE_3;
+		break;
+	case SB_MIDEX3_PID_NO_FIRMWARE:
+		dev_info(&midex->usbdev->dev,
+				SB_MIDEX_PREFIX
+				"Firmware update not implemented.");
+		midex->card_type = SB_MIDEX_TYPE_3;
 		break;
 	default:
-		/* Figure out if its a midex3, what PID...*/
-		strncpy(midex->card->shortname, "MIDEXxxx",
+		/* Unknown. Figure out what PID/config etc...*/
+		strscpy(midex->card->shortname, "MIDEXxxx",
 				sizeof(midex->card->shortname));
-		strncpy(midex->card->longname, "Unknown MIDEXxxx",
+		strscpy(midex->card->longname, "Unknown MIDEXxxx",
 				sizeof(midex->card->longname));
 		midex->card_type = SB_MIDEX_TYPE_UNKNOWN;
 		break;
@@ -1450,7 +1470,7 @@ static void sb_midex_init_determine_type_and_name(
 
 	if (midex->usbdev->product != NULL)
 	{
-		strncpy(midex->card->shortname, midex->usbdev->product,
+		strscpy(midex->card->shortname, midex->usbdev->product,
 				sizeof(midex->card->shortname));
 		/* Device name from USB descriptor: */
 		snprintf(midex->card->longname, sizeof(midex->card->longname),
@@ -1642,7 +1662,7 @@ static int sb_midex_drv_probe(
 		goto probe_error;
 
 	snd_card_set_dev(card, &interface->dev);
-	strncpy(card->driver, "snd-usb-midex", sizeof(card->driver));
+	strscpy(card->driver, "snd-usb-midex", sizeof(card->driver));
 
 	usb_set_intfdata(interface, midex);
 	set_bit(card_index, devices_used);
