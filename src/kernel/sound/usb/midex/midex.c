@@ -39,21 +39,19 @@
 #include <sound/rawmidi.h>
 #include <sound/asound.h>
 
-
 /*******************************************************************
  * Defines
  *******************************************************************/
 #define SB_MIDEX_PREFIX "snd-usb-midex: "
 
-#define SB_MIDEX_URB_BUFFER_SIZE	64
-#define SB_MIDEX_NUM_URBS_PER_EP	7
+#define SB_MIDEX_URB_BUFFER_SIZE 64
+#define SB_MIDEX_NUM_URBS_PER_EP 7
 
 /* Timer periods (in ms) */
-#define TIMER_PERIOD_TIMING_NS	(25600*1000)
+#define TIMER_PERIOD_TIMING_NS (25600 * 1000)
 
-#define TIMER_PERIOD_LED_INACTIVE_MS	 50
-#define TIMER_PERIOD_LED_ACTIVE_MS		 150
-
+#define TIMER_PERIOD_LED_INACTIVE_MS 50
+#define TIMER_PERIOD_LED_ACTIVE_MS 150
 
 /*
  * VID is always 0x0a4e
@@ -63,12 +61,12 @@
  *
  * Also, PID1 seems to imply: reflash firmware
  */
- 
+
 #define SB_MIDEX8_PID_OLD_FIRMWARE 0x1010
 #define SB_MIDEX8_PID_NEW_FIRMWARE 0x1001
-#define SB_MIDEX8_PID_NO_FIRMWARE  0x1000
+#define SB_MIDEX8_PID_NO_FIRMWARE 0x1000
 
-#define SB_MIDEX3_PID_NO_FIRMWARE  0x1100
+#define SB_MIDEX3_PID_NO_FIRMWARE 0x1100
 #define SB_MIDEX3_PID_NEW_FIRMWARE 0x1101
 
 /*******************************************************************
@@ -81,24 +79,23 @@ static struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID_NO_FIRMWARE) },
 	{ USB_DEVICE(0x0a4e, SB_MIDEX3_PID_NEW_FIRMWARE) },
 	{ USB_DEVICE(0x0a4e, SB_MIDEX3_PID_NO_FIRMWARE) },
-	{ },
+	{},
 };
-
 
 enum sb_midex_type {
 	SB_MIDEX_TYPE_UNKNOWN,
-	SB_MIDEX_TYPE_3,  /* 1 in, 3 out*/
+	SB_MIDEX_TYPE_3, /* 1 in, 3 out*/
 	SB_MIDEX_TYPE_8, /* 8 in, 8 out*/
 }; /* card type */
 
 enum sb_midex_port_state {
-	STATE_UNKNOWN	= 0,
-	STATE_1PARAM	= 1,
-	STATE_2PARAM_1	= 2,
-	STATE_2PARAM_2	= 3,
-	STATE_SYSEX_0	= 4,
-	STATE_SYSEX_1	= 5,
-	STATE_SYSEX_2	= 6,
+	STATE_UNKNOWN = 0,
+	STATE_1PARAM = 1,
+	STATE_2PARAM_1 = 2,
+	STATE_2PARAM_2 = 3,
+	STATE_SYSEX_0 = 4,
+	STATE_SYSEX_1 = 5,
+	STATE_SYSEX_2 = 6,
 };
 
 enum sb_midex_timing_state {
@@ -115,7 +112,6 @@ enum sb_midex_led_state {
 	SB_MIDEX_LED_GFX_FILL_IN,
 	SB_MIDEX_LED_GFX_RUN_IN,
 };
-
 
 struct sb_midex;
 
@@ -149,16 +145,15 @@ struct sb_midex {
 	int card_index;
 	int card_type;
 
-
 	struct snd_rawmidi *rmidi;
 	int num_used_substreams;
 
 	/* Timer */
-	spinlock_t					timer_timing_lock;
-	enum sb_midex_timing_state	timing_state;
-	struct hrtimer				timer_timing;
-	struct timer_list			timer_led;
-	ktime_t						timer_timing_deltat;
+	spinlock_t timer_timing_lock;
+	enum sb_midex_timing_state timing_state;
+	struct hrtimer timer_timing;
+	struct timer_list timer_led;
+	ktime_t timer_timing_deltat;
 
 	/* LED */
 	enum sb_midex_led_state led_state;
@@ -182,10 +177,8 @@ struct sb_midex {
 	/* EP 6 in */
 	struct sb_midex_urb_ctx led_replies_urb;
 
-
 	struct usb_anchor anchor;
 };
-
 
 /*******************************************************************
  * Function declarations
@@ -193,11 +186,9 @@ struct sb_midex {
 
 static void sb_midex_usb_midi_input_start(struct sb_midex *midex);
 static void sb_midex_usb_midi_input_stop(struct sb_midex *midex);
-static void sb_midex_usb_midi_output_drain(
-		struct snd_rawmidi_substream *substream);
-static enum hrtimer_restart sb_midex_timer_timing_callback(
-		struct hrtimer *hrt);
-
+static void
+sb_midex_usb_midi_output_drain(struct snd_rawmidi_substream *substream);
+static enum hrtimer_restart sb_midex_timer_timing_callback(struct hrtimer *hrt);
 
 /*******************************************************************
  * Internal global variables
@@ -211,18 +202,17 @@ static DECLARE_BITMAP(devices_used, SNDRV_CARDS);
 static struct usb_driver sb_midex_driver;
 
 static const uint8_t sb_midex_cin_length[] = {
-	0, 0, 2, 3, 3, 1, 2, 3, 3, 3, 3, 3, 2, 2, 3, 1
-/*	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, a, b, c, d, e, f  */
+	0, 0, 2, 3, 3, 1, 2, 3, 3,
+	3, 3, 3, 2, 2, 3, 1
+	/*	0, 1, 2, 3, 4, 5, 6, 7, 
+	8, 9, a, b, c, d, e, f  */
 };
-
 
 /*
  * Submits the URB, with error handling.
  */
-static int sb_midex_submit_urb(
-		struct sb_midex_urb_ctx *ctx,
-		gfp_t flags,
-		const char *function)
+static int sb_midex_submit_urb(struct sb_midex_urb_ctx *ctx, gfp_t flags,
+			       const char *function)
 {
 	int err = 0;
 
@@ -230,18 +220,15 @@ static int sb_midex_submit_urb(
 
 	if (err < 0)
 		dev_err(&ctx->urb->dev->dev,
-				SB_MIDEX_PREFIX "usb_submit_urb: %d at %s\n",
-				err, function);
+			SB_MIDEX_PREFIX "usb_submit_urb: %d at %s\n", err,
+			function);
 	else
 		ctx->active = true;
 
 	return err;
 }
 
-
-static int sb_midex_urb_show_error(
-		const struct urb *urb,
-		const char *func)
+static int sb_midex_urb_show_error(const struct urb *urb, const char *func)
 {
 	switch (urb->status) {
 	/* manually unlinked, or device gone */
@@ -256,33 +243,28 @@ static int sb_midex_urb_show_error(
 	case -EILSEQ:
 		return -EIO;
 	default:
-		dev_err(&urb->dev->dev,
-				"urb status %d in %s\n",
-				urb->status, func);
+		dev_err(&urb->dev->dev, "urb status %d in %s\n", urb->status,
+			func);
 		return 0; /* continue */
 	}
 }
 
-
-static void sb_midex_urb_and_buffer_free(
-		struct sb_midex *midex,
-		struct urb *urb,
-		unsigned int buffer_length)
+static void sb_midex_urb_and_buffer_free(struct sb_midex *midex,
+					 struct urb *urb,
+					 unsigned int buffer_length)
 {
 	if (urb)
 		usb_free_coherent(midex->usbdev, buffer_length,
-				urb->transfer_buffer, urb->transfer_dma);
+				  urb->transfer_buffer, urb->transfer_dma);
 
 	usb_free_urb(urb);
 }
 
-
-static struct urb *sb_midex_urb_and_buffer_alloc(
-		struct sb_midex *midex,
-		unsigned int pipe,
-		unsigned int buffer_length,
-		usb_complete_t complete_fn,
-		void *context)
+static struct urb *sb_midex_urb_and_buffer_alloc(struct sb_midex *midex,
+						 unsigned int pipe,
+						 unsigned int buffer_length,
+						 usb_complete_t complete_fn,
+						 void *context)
 {
 	struct urb *urb = NULL;
 	void *buffer = NULL;
@@ -290,38 +272,33 @@ static struct urb *sb_midex_urb_and_buffer_alloc(
 	urb = usb_alloc_urb(0, GFP_KERNEL);
 
 	if (urb != NULL) {
-		buffer = usb_alloc_coherent(
-				midex->usbdev,
-				buffer_length, GFP_KERNEL,
-				&urb->transfer_dma);
+		buffer = usb_alloc_coherent(midex->usbdev, buffer_length,
+					    GFP_KERNEL, &urb->transfer_dma);
 
 		if (buffer != NULL) {
-			usb_fill_int_urb(
-					urb, midex->usbdev,
-					pipe,
-					buffer, buffer_length,
-					complete_fn, context, 1);
+			usb_fill_int_urb(urb, midex->usbdev, pipe, buffer,
+					 buffer_length, complete_fn, context,
+					 1);
 
 			urb->transfer_flags = URB_NO_TRANSFER_DMA_MAP;
 		} else {
 			dev_warn(&midex->usbdev->dev,
-					SB_MIDEX_PREFIX
-					"could not allocate urb buffer of %db\n",
-					buffer_length);
+				 SB_MIDEX_PREFIX
+				 "could not allocate urb buffer of %db\n",
+				 buffer_length);
 		}
 	} else {
 		dev_warn(&midex->usbdev->dev,
-				SB_MIDEX_PREFIX "could not allocate urb\n");
+			 SB_MIDEX_PREFIX "could not allocate urb\n");
 	}
 	return urb;
 }
 
-
 /******************************************************************************
  * MIDI stream open/close functions
  ******************************************************************************/
-static int sb_midex_raw_midi_substream_open(
-		struct snd_rawmidi_substream *substream)
+static int
+sb_midex_raw_midi_substream_open(struct snd_rawmidi_substream *substream)
 {
 	unsigned long flags;
 	struct sb_midex *midex = substream->rmidi->private_data;
@@ -331,7 +308,7 @@ static int sb_midex_raw_midi_substream_open(
 	midex->num_used_substreams++;
 
 	if (midex->num_used_substreams > 0 &&
-			midex->timing_state == SB_MIDEX_TIMING_IDLE) {
+	    midex->timing_state == SB_MIDEX_TIMING_IDLE) {
 		midex->timing_state = SB_MIDEX_TIMING_START;
 		spin_unlock_irqrestore(&midex->timer_timing_lock, flags);
 
@@ -347,9 +324,8 @@ static int sb_midex_raw_midi_substream_open(
 	return 0;
 }
 
-
-static int sb_midex_raw_midi_substream_close(
-		struct snd_rawmidi_substream *substream)
+static int
+sb_midex_raw_midi_substream_close(struct snd_rawmidi_substream *substream)
 {
 	unsigned long flags;
 	struct sb_midex *midex = substream->rmidi->private_data;
@@ -359,35 +335,30 @@ static int sb_midex_raw_midi_substream_close(
 	midex->num_used_substreams--;
 
 	if (midex->num_used_substreams <= 0 &&
-			midex->timing_state != SB_MIDEX_TIMING_IDLE)
+	    midex->timing_state != SB_MIDEX_TIMING_IDLE)
 		midex->timing_state = SB_MIDEX_TIMING_STOP;
 	spin_unlock_irqrestore(&midex->timer_timing_lock, flags);
 
 	return 0;
 }
 
-
 /******************************************************************************
  * MIDI input functions
  ******************************************************************************/
 
-static int sb_midex_raw_midi_input_open(
-		struct snd_rawmidi_substream *substream)
+static int sb_midex_raw_midi_input_open(struct snd_rawmidi_substream *substream)
 {
 	return sb_midex_raw_midi_substream_open(substream);
 }
 
-
-static int sb_midex_raw_midi_input_close(
-		struct snd_rawmidi_substream *substream)
+static int
+sb_midex_raw_midi_input_close(struct snd_rawmidi_substream *substream)
 {
 	return sb_midex_raw_midi_substream_close(substream);
 }
 
-
-static void sb_midex_raw_midi_input_trigger(
-		struct snd_rawmidi_substream *substream,
-		int up)
+static void
+sb_midex_raw_midi_input_trigger(struct snd_rawmidi_substream *substream, int up)
 {
 	struct sb_midex *midex = substream->rmidi->private_data;
 
@@ -395,29 +366,25 @@ static void sb_midex_raw_midi_input_trigger(
 	midex->midi_in.ports[substream->number].triggered = up;
 }
 
-
-
 /******************************************************************************
  * MIDI output functions
  ******************************************************************************/
 
-static int sb_midex_raw_midi_output_open(
-		struct snd_rawmidi_substream *substream)
+static int
+sb_midex_raw_midi_output_open(struct snd_rawmidi_substream *substream)
 {
 	return sb_midex_raw_midi_substream_open(substream);
 }
 
-
-static int sb_midex_raw_midi_output_close(
-		struct snd_rawmidi_substream *substream)
+static int
+sb_midex_raw_midi_output_close(struct snd_rawmidi_substream *substream)
 {
 	return sb_midex_raw_midi_substream_close(substream);
 }
 
-
-static void sb_midex_raw_midi_output_trigger(
-		struct snd_rawmidi_substream *substream,
-		int up)
+static void
+sb_midex_raw_midi_output_trigger(struct snd_rawmidi_substream *substream,
+				 int up)
 {
 	struct sb_midex *midex = substream->rmidi->private_data;
 
@@ -428,28 +395,24 @@ static void sb_midex_raw_midi_output_trigger(
 		tasklet_schedule(&midex->midi_out_tasklet);
 }
 
-
 static struct snd_rawmidi_ops sb_midex_raw_midi_output = {
-	.open =    sb_midex_raw_midi_output_open,
-	.close =   sb_midex_raw_midi_output_close,
+	.open = sb_midex_raw_midi_output_open,
+	.close = sb_midex_raw_midi_output_close,
 	.trigger = sb_midex_raw_midi_output_trigger,
-	.drain =   sb_midex_usb_midi_output_drain,
+	.drain = sb_midex_usb_midi_output_drain,
 };
-
 
 static struct snd_rawmidi_ops sb_midex_raw_midi_input = {
-	.open =    sb_midex_raw_midi_input_open,
-	.close =   sb_midex_raw_midi_input_close,
+	.open = sb_midex_raw_midi_input_open,
+	.close = sb_midex_raw_midi_input_close,
 	.trigger = sb_midex_raw_midi_input_trigger,
 };
-
 
 /******************************************************************************
  * USB functions
  ******************************************************************************/
 
-static void sb_midex_usb_midi_input_start(
-		struct sb_midex *midex)
+static void sb_midex_usb_midi_input_start(struct sb_midex *midex)
 {
 	int urb_index;
 
@@ -459,17 +422,14 @@ static void sb_midex_usb_midi_input_start(
 	if (!midex->midi_in.active) {
 		midex->midi_in.active = true;
 
-		for (urb_index = 0;
-				urb_index < SB_MIDEX_NUM_URBS_PER_EP;
-				urb_index++)
+		for (urb_index = 0; urb_index < SB_MIDEX_NUM_URBS_PER_EP;
+		     urb_index++)
 			sb_midex_submit_urb(&midex->midi_in.urbs[urb_index],
-					GFP_ATOMIC, __func__);
+					    GFP_ATOMIC, __func__);
 	}
 }
 
-
-static void sb_midex_usb_midi_input_stop(
-		struct sb_midex *midex)
+static void sb_midex_usb_midi_input_stop(struct sb_midex *midex)
 {
 	int urb_index;
 
@@ -482,11 +442,9 @@ static void sb_midex_usb_midi_input_stop(
 	midex->midi_in.active = false;
 }
 
-
-static void sb_midex_usb_midi_input_to_raw_midi(
-		struct sb_midex *midex,
-		const unsigned char *buffer,
-		unsigned int buf_len)
+static void sb_midex_usb_midi_input_to_raw_midi(struct sb_midex *midex,
+						const unsigned char *buffer,
+						unsigned int buf_len)
 {
 	unsigned long flags;
 	int buf_index;
@@ -499,9 +457,8 @@ static void sb_midex_usb_midi_input_to_raw_midi(
 	 */
 	if ((buf_len & 0x03) || (buf_len > SB_MIDEX_URB_BUFFER_SIZE)) {
 		dev_warn(&midex->usbdev->dev,
-				SB_MIDEX_PREFIX
-				"unexpected midi input length: %d\n",
-				buf_len);
+			 SB_MIDEX_PREFIX "unexpected midi input length: %d\n",
+			 buf_len);
 	}
 
 	spin_lock_irqsave(&midex->midi_in.lock, flags);
@@ -515,7 +472,7 @@ static void sb_midex_usb_midi_input_to_raw_midi(
 			out_len = 0;
 			break;
 		case 0x0f:
-			switch (buffer[buf_index+1]) {
+			switch (buffer[buf_index + 1]) {
 			case 0xf1:
 			case 0xf3:
 				out_len = 2;
@@ -533,21 +490,18 @@ static void sb_midex_usb_midi_input_to_raw_midi(
 			break;
 		}
 
-		if ((out_len > 0) &&
-				midex->midi_in.ports[port].triggered &&
-				midex->midi_in.ports[port].substream &&
-				midex->midi_in.ports[port].substream->opened) {
+		if ((out_len > 0) && midex->midi_in.ports[port].triggered &&
+		    midex->midi_in.ports[port].substream &&
+		    midex->midi_in.ports[port].substream->opened) {
 			snd_rawmidi_receive(
-					midex->midi_in.ports[port].substream,
-					&buffer[buf_index+1], out_len);
+				midex->midi_in.ports[port].substream,
+				&buffer[buf_index + 1], out_len);
 		}
 	}
 	spin_unlock_irqrestore(&midex->midi_in.lock, flags);
 }
 
-
-static void sb_midex_usb_midi_input_complete(
-		struct urb *urb)
+static void sb_midex_usb_midi_input_complete(struct urb *urb)
 {
 	unsigned long flags;
 
@@ -562,14 +516,14 @@ static void sb_midex_usb_midi_input_complete(
 		sb_midex_urb_show_error(urb, __func__);
 	} else {
 		/* do some processing */
-		sb_midex_usb_midi_input_to_raw_midi(midex,
-				urb->transfer_buffer, urb->actual_length);
+		sb_midex_usb_midi_input_to_raw_midi(midex, urb->transfer_buffer,
+						    urb->actual_length);
 	}
 
 	spin_lock_irqsave(&midex->timer_timing_lock, flags);
 
 	if (midex->midi_in.active &&
-			midex->timing_state == SB_MIDEX_TIMING_RUNNING) {
+	    midex->timing_state == SB_MIDEX_TIMING_RUNNING) {
 		sb_midex_submit_urb(ctx, GFP_ATOMIC, __func__);
 	} else {
 		ctx->active = false;
@@ -578,18 +532,15 @@ static void sb_midex_usb_midi_input_complete(
 	spin_unlock_irqrestore(&midex->timer_timing_lock, flags);
 }
 
-
 /*
  * Adds one USB MIDI packet to the output buffer.
  * \note (Same the ALSA USB MIDI driver's snd_usbmidi_output_standard_packet)
  */
-static void sb_midex_usb_midi_output_packet(
-		struct urb *urb,
-		uint8_t p0,	uint8_t p1,
-		uint8_t p2,	uint8_t p3)
+static void sb_midex_usb_midi_output_packet(struct urb *urb, uint8_t p0,
+					    uint8_t p1, uint8_t p2, uint8_t p3)
 {
-	uint8_t *buf = (uint8_t *)urb->transfer_buffer +
-			urb->transfer_buffer_length;
+	uint8_t *buf =
+		(uint8_t *)urb->transfer_buffer + urb->transfer_buffer_length;
 	buf[0] = p0;
 	buf[1] = p1;
 	buf[2] = p2;
@@ -597,23 +548,18 @@ static void sb_midex_usb_midi_output_packet(
 	urb->transfer_buffer_length += 4;
 }
 
-
 /**
  * Converts MIDI commands to USB MIDI packets.
  *
  * \note (Same the ALSA USB MIDI driver's snd_usbmidi_transmit_byte)
  */
-static void sb_midex_usb_midi_output_transmit_byte(
-		struct sb_midex_port *port,
-		uint8_t b,
-		struct urb *urb)
+static void sb_midex_usb_midi_output_transmit_byte(struct sb_midex_port *port,
+						   uint8_t b, struct urb *urb)
 {
 	uint8_t p0 = (port->substream->number & 0x7) << 4;
 
 	if (b >= 0xf8) {
-		sb_midex_usb_midi_output_packet(urb,
-				p0 | 0x0f, b,
-				0, 0);
+		sb_midex_usb_midi_output_packet(urb, p0 | 0x0f, b, 0, 0);
 	} else if (b >= 0xf0) {
 		switch (b) {
 		case 0xf0:
@@ -634,27 +580,25 @@ static void sb_midex_usb_midi_output_transmit_byte(
 			port->state = STATE_UNKNOWN;
 			break;
 		case 0xf6:
-			sb_midex_usb_midi_output_packet(urb,
-					p0 | 0x05, 0xf6,
-					0, 0);
+			sb_midex_usb_midi_output_packet(urb, p0 | 0x05, 0xf6, 0,
+							0);
 			port->state = STATE_UNKNOWN;
 			break;
 		case 0xf7:
 			switch (port->state) {
 			case STATE_SYSEX_0:
-				sb_midex_usb_midi_output_packet(urb,
-						p0 | 0x05, 0xf7,
-						0, 0);
+				sb_midex_usb_midi_output_packet(urb, p0 | 0x05,
+								0xf7, 0, 0);
 				break;
 			case STATE_SYSEX_1:
-				sb_midex_usb_midi_output_packet(urb,
-						p0 | 0x06, port->midi_data[0],
-						0xf7, 0);
+				sb_midex_usb_midi_output_packet(
+					urb, p0 | 0x06, port->midi_data[0],
+					0xf7, 0);
 				break;
 			case STATE_SYSEX_2:
-				sb_midex_usb_midi_output_packet(urb,
-						p0 | 0x07, port->midi_data[0],
-						port->midi_data[1], 0xf7);
+				sb_midex_usb_midi_output_packet(
+					urb, p0 | 0x07, port->midi_data[0],
+					port->midi_data[1], 0xf7);
 				break;
 			default:
 				break;
@@ -677,9 +621,8 @@ static void sb_midex_usb_midi_output_transmit_byte(
 				p0 |= 0x02;
 				port->state = STATE_UNKNOWN;
 			}
-			sb_midex_usb_midi_output_packet(urb,
-					p0, port->midi_data[0],
-					b, 0);
+			sb_midex_usb_midi_output_packet(
+				urb, p0, port->midi_data[0], b, 0);
 			break;
 		case STATE_2PARAM_1:
 			port->midi_data[1] = b;
@@ -693,9 +636,9 @@ static void sb_midex_usb_midi_output_transmit_byte(
 				p0 |= 0x03;
 				port->state = STATE_UNKNOWN;
 			}
-			sb_midex_usb_midi_output_packet(urb,
-					p0, port->midi_data[0],
-					port->midi_data[1], b);
+			sb_midex_usb_midi_output_packet(urb, p0,
+							port->midi_data[0],
+							port->midi_data[1], b);
 			break;
 		case STATE_SYSEX_0:
 			port->midi_data[0] = b;
@@ -706,9 +649,9 @@ static void sb_midex_usb_midi_output_transmit_byte(
 			port->state = STATE_SYSEX_2;
 			break;
 		case STATE_SYSEX_2:
-			sb_midex_usb_midi_output_packet(urb,
-					p0 | 0x04, port->midi_data[0],
-					port->midi_data[1], b);
+			sb_midex_usb_midi_output_packet(urb, p0 | 0x04,
+							port->midi_data[0],
+							port->midi_data[1], b);
 			port->state = STATE_SYSEX_0;
 			break;
 		default:
@@ -717,54 +660,46 @@ static void sb_midex_usb_midi_output_transmit_byte(
 	}
 }
 
-
-static int sb_midex_usb_midi_output_from_raw_midi(
-		struct sb_midex *midex,
-		struct urb *urb)
+static int sb_midex_usb_midi_output_from_raw_midi(struct sb_midex *midex,
+						  struct urb *urb)
 {
 	int port_index;
 	uint8_t b;
 	struct sb_midex_port *midi_port;
 
-	for (port_index = 0;
-			port_index < midex->midi_out.num_ports;
-			++port_index) {
+	for (port_index = 0; port_index < midex->midi_out.num_ports;
+	     ++port_index) {
 		midi_port = &midex->midi_out.ports[port_index];
 
 		if (midi_port->substream == NULL)
 			dev_info(&midex->usbdev->dev,
-					SB_MIDEX_PREFIX
-					"substream = NULL...\n");
+				 SB_MIDEX_PREFIX "substream = NULL...\n");
 		if (urb == NULL)
 			dev_info(&midex->usbdev->dev,
-					SB_MIDEX_PREFIX
-					"urb = NULL...\n");
+				 SB_MIDEX_PREFIX "urb = NULL...\n");
 
 		if ((midi_port->triggered == 0) ||
-				!(midi_port->substream->opened))
+		    !(midi_port->substream->opened))
 			continue;
 		/* Have seen cases with up to 20 bytes sent in 1 packet.
 		 * Assuming at least half the buffer can be used:
 		 */
-		while (urb->transfer_buffer_length + 3
-				< (SB_MIDEX_URB_BUFFER_SIZE/2)) {
-			if (snd_rawmidi_transmit(
-					midi_port->substream,
-					&b, 1) != 1) {
+		while (urb->transfer_buffer_length + 3 <
+		       (SB_MIDEX_URB_BUFFER_SIZE / 2)) {
+			if (snd_rawmidi_transmit(midi_port->substream, &b, 1) !=
+			    1) {
 				midi_port->triggered = 0;
 				break;
 			}
-			sb_midex_usb_midi_output_transmit_byte(
-					midi_port, b, urb);
+			sb_midex_usb_midi_output_transmit_byte(midi_port, b,
+							       urb);
 		}
 	}
 
 	return 0;
 }
 
-
-static void sb_midex_usb_midi_output(
-		struct sb_midex *midex)
+static void sb_midex_usb_midi_output(struct sb_midex *midex)
 {
 	unsigned long flags;
 	int urb_index;
@@ -779,13 +714,13 @@ static void sb_midex_usb_midi_output(
 		if (!midex->midi_out.urbs[urb_index].active) {
 			found_urb = true;
 			midex->midi_out.urbs[urb_index]
-					.urb->transfer_buffer_length = 0;
+				.urb->transfer_buffer_length = 0;
 			/* get output from raw_midi */
-			sb_midex_usb_midi_output_from_raw_midi(midex,
-					midex->midi_out.urbs[urb_index].urb);
+			sb_midex_usb_midi_output_from_raw_midi(
+				midex, midex->midi_out.urbs[urb_index].urb);
 
 			if (midex->midi_out.urbs[urb_index]
-					.urb->transfer_buffer_length > 0) {
+				    .urb->transfer_buffer_length > 0) {
 				sb_midex_submit_urb(
 					&midex->midi_out.urbs[urb_index],
 					GFP_ATOMIC, __func__);
@@ -803,9 +738,7 @@ static void sb_midex_usb_midi_output(
 	 */
 }
 
-
-static void sb_midex_usb_midi_output_complete(
-		struct urb *urb)
+static void sb_midex_usb_midi_output_complete(struct urb *urb)
 {
 	/* lock EP, find urb, set urb to inactive, unlock */
 	struct sb_midex_urb_ctx *ctx = urb->context;
@@ -834,9 +767,8 @@ static void sb_midex_usb_midi_output_complete(
 	/* tasklet_schedule(&midex->midi_out_tasklet); */
 }
 
-
-static void sb_midex_usb_midi_output_drain(
-		struct snd_rawmidi_substream *substream)
+static void
+sb_midex_usb_midi_output_drain(struct snd_rawmidi_substream *substream)
 {
 	struct sb_midex *midex = substream->rmidi->private_data;
 	unsigned int urb_index;
@@ -869,32 +801,26 @@ static void sb_midex_usb_midi_output_drain(
 	spin_unlock_irq(&midex->midi_out.lock);
 }
 
-
-static void sb_midex_usb_midi_output_tasklet(
-		unsigned long data)
+static void sb_midex_usb_midi_output_tasklet(unsigned long data)
 {
-	struct sb_midex *midex = (struct sb_midex *) data;
+	struct sb_midex *midex = (struct sb_midex *)data;
 
 	sb_midex_usb_midi_output(midex);
 }
 
-
-static void sb_midex_usb_timing_output_complete(
-		struct urb *urb)
+static void sb_midex_usb_timing_output_complete(struct urb *urb)
 {
 	unsigned long flags;
 
 	struct sb_midex_urb_ctx *ctx = urb->context;
 	struct sb_midex *midex = ctx->midex;
 
-
 	if (urb->status)
 		sb_midex_urb_show_error(urb, __func__);
 
 	if (!ctx) {
 		dev_warn(&urb->dev->dev,
-				SB_MIDEX_PREFIX
-				"no midex for timing output complete");
+			 SB_MIDEX_PREFIX "no midex for timing output complete");
 		return;
 	}
 
@@ -914,9 +840,7 @@ static void sb_midex_usb_timing_output_complete(
 	 */
 }
 
-
-static void sb_midex_usb_led_output_complete(
-		struct urb *urb)
+static void sb_midex_usb_led_output_complete(struct urb *urb)
 {
 	struct sb_midex_urb_ctx *ctx = urb->context;
 	struct sb_midex *midex = ctx->midex;
@@ -932,14 +856,12 @@ static void sb_midex_usb_led_output_complete(
 
 	if (midex->led_state == SB_MIDEX_LED_RUNNING && !urb_err) {
 		/* read reply from MIDEX */
-		sb_midex_submit_urb(&midex->led_replies_urb,
-				GFP_ATOMIC, __func__);
+		sb_midex_submit_urb(&midex->led_replies_urb, GFP_ATOMIC,
+				    __func__);
 	}
 }
 
-
-static void sb_midex_usb_led_input_complete(
-		struct urb *urb)
+static void sb_midex_usb_led_input_complete(struct urb *urb)
 {
 	struct sb_midex_urb_ctx *ctx = urb->context;
 
@@ -952,18 +874,16 @@ static void sb_midex_usb_led_input_complete(
 	ctx->active = false;
 }
 
-
 /******************************************************************************
  * Device functions
  ******************************************************************************/
-static enum hrtimer_restart sb_midex_timer_timing_callback(
-		struct hrtimer *hrt)
+static enum hrtimer_restart sb_midex_timer_timing_callback(struct hrtimer *hrt)
 {
 	int urb_index;
 	unsigned long flags;
 	unsigned char *buffer;
-	struct sb_midex *midex = container_of(hrt,
-			struct sb_midex, timer_timing);
+	struct sb_midex *midex =
+		container_of(hrt, struct sb_midex, timer_timing);
 
 	spin_lock_irqsave(&midex->timer_timing_lock, flags);
 
@@ -971,16 +891,17 @@ static enum hrtimer_restart sb_midex_timer_timing_callback(
 	for (urb_index = 0; urb_index < SB_MIDEX_NUM_URBS_PER_EP; urb_index++) {
 		if (midex->timing_out_urb[urb_index].active) {
 			dev_info(&midex->usbdev->dev,
-					SB_MIDEX_PREFIX
-					"timing urb %d still active, unlinking",
-					urb_index);
+				 SB_MIDEX_PREFIX
+				 "timing urb %d still active, unlinking",
+				 urb_index);
 			usb_unlink_urb(midex->timing_out_urb[urb_index].urb);
 		}
 	}
 
 	/* find a free urb */
 	for (urb_index = 0; urb_index < SB_MIDEX_NUM_URBS_PER_EP &&
-			midex->timing_out_urb[urb_index].active; urb_index++)
+			    midex->timing_out_urb[urb_index].active;
+	     urb_index++)
 		;
 
 	/* if we found a free urb: use it. */
@@ -991,31 +912,30 @@ static enum hrtimer_restart sb_midex_timer_timing_callback(
 		buffer[2] = 0;
 		buffer[3] = 0;
 
-		midex->timing_out_urb[urb_index]
-				.urb->transfer_buffer_length = 4;
+		midex->timing_out_urb[urb_index].urb->transfer_buffer_length =
+			4;
 
 		switch (midex->timing_state) {
 		case SB_MIDEX_TIMING_START:
 			buffer[1] = 0xfd; /* start*/
 			sb_midex_submit_urb(&midex->timing_out_urb[urb_index],
-					GFP_ATOMIC, __func__);
+					    GFP_ATOMIC, __func__);
 
 			midex->timing_state = SB_MIDEX_TIMING_RUNNING;
 			break;
 		case SB_MIDEX_TIMING_RUNNING:
-			buffer[1] = 0xf9;	/* running */
+			buffer[1] = 0xf9; /* running */
 			sb_midex_submit_urb(&midex->timing_out_urb[urb_index],
-					GFP_ATOMIC, __func__);
+					    GFP_ATOMIC, __func__);
 
 			if (!midex->midi_in.active &&
-					(midex->timing_state !=
-							SB_MIDEX_TIMING_IDLE))
+			    (midex->timing_state != SB_MIDEX_TIMING_IDLE))
 				sb_midex_usb_midi_input_start(midex);
 			break;
 		case SB_MIDEX_TIMING_STOP:
 			buffer[1] = 0xf5; /* stop */
 			sb_midex_submit_urb(&midex->timing_out_urb[urb_index],
-					GFP_ATOMIC, __func__);
+					    GFP_ATOMIC, __func__);
 
 			/* cancel outstanding MIDI-in urbs*/
 			sb_midex_usb_midi_input_stop(midex);
@@ -1037,12 +957,10 @@ static enum hrtimer_restart sb_midex_timer_timing_callback(
 	return HRTIMER_RESTART;
 }
 
-
-static int sb_midex_usb_led_fill_and_send_command(
-		struct sb_midex_urb_ctx *ctx,
-		unsigned char led_nr,
-		bool		  led_state,
-		bool		  led_is_left)
+static int sb_midex_usb_led_fill_and_send_command(struct sb_midex_urb_ctx *ctx,
+						  unsigned char led_nr,
+						  bool led_state,
+						  bool led_is_left)
 {
 	unsigned char *buf = ctx->urb->transfer_buffer;
 
@@ -1061,9 +979,7 @@ static int sb_midex_usb_led_fill_and_send_command(
 	return sb_midex_submit_urb(ctx, GFP_ATOMIC, __func__);
 }
 
-
-static void sb_midex_timer_led_callback(
-		struct timer_list *t)
+static void sb_midex_timer_led_callback(struct timer_list *t)
 {
 	struct sb_midex *midex = from_timer(midex, t, timer_led);
 	unsigned char *buffer;
@@ -1072,28 +988,27 @@ static void sb_midex_timer_led_callback(
 
 	/* We want this timer to be periodic... */
 	if (midex->timing_state != SB_MIDEX_TIMING_IDLE)
-		mod_timer(&(midex->timer_led), jiffies +
-				msecs_to_jiffies(TIMER_PERIOD_LED_ACTIVE_MS));
+		mod_timer(&(midex->timer_led),
+			  jiffies +
+				  msecs_to_jiffies(TIMER_PERIOD_LED_ACTIVE_MS));
 	else
-		mod_timer(&(midex->timer_led), jiffies +
-				msecs_to_jiffies(TIMER_PERIOD_LED_INACTIVE_MS));
-
+		mod_timer(&(midex->timer_led),
+			  jiffies + msecs_to_jiffies(
+					    TIMER_PERIOD_LED_INACTIVE_MS));
 
 	/* check if the previously sent urb was still active...
 	 * it shouldn't be afte 50+ms, but it can happen.
 	 */
 	if (midex->led_replies_urb.active ||
-			midex->led_commands_urb[0].active) {
+	    midex->led_commands_urb[0].active) {
 		if (midex->led_commands_urb[0].active) {
-			dev_info(&midex->usbdev->dev,
-					SB_MIDEX_PREFIX
-					"led reply urb still active, unlinking");
+			dev_info(&midex->usbdev->dev, SB_MIDEX_PREFIX
+				 "led reply urb still active, unlinking");
 			usb_unlink_urb(midex->led_commands_urb[0].urb);
 		}
 		if (midex->led_replies_urb.active) {
-			dev_info(&midex->usbdev->dev,
-					SB_MIDEX_PREFIX
-					"led reply urb still active, unlinking");
+			dev_info(&midex->usbdev->dev, SB_MIDEX_PREFIX
+				 "led reply urb still active, unlinking");
 			usb_unlink_urb(midex->led_replies_urb.urb);
 		}
 		return; /* try again next time... */
@@ -1108,12 +1023,12 @@ static void sb_midex_timer_led_callback(
 		midex->led_commands_urb[0].urb->transfer_buffer_length = 2;
 
 		ret = sb_midex_submit_urb(&midex->led_commands_urb[0],
-				GFP_ATOMIC, __func__);
+					  GFP_ATOMIC, __func__);
 		break;
 	case SB_MIDEX_LED_INIT: /* start of device */
 		/* read reply from MIDEX */
-		sb_midex_submit_urb(&midex->led_replies_urb,
-				GFP_ATOMIC, __func__);
+		sb_midex_submit_urb(&midex->led_replies_urb, GFP_ATOMIC,
+				    __func__);
 		midex->led_state = SB_MIDEX_LED_GFX_RUN_OUT;
 		break;
 
@@ -1123,20 +1038,20 @@ static void sb_midex_timer_led_callback(
 			/* off the previous led */
 			led_nr = midex->led_state_gfx - 1;
 			sb_midex_usb_led_fill_and_send_command(
-					&midex->led_commands_urb[0],
-					led_nr, false, true);
+				&midex->led_commands_urb[0], led_nr, false,
+				true);
 			sb_midex_usb_led_fill_and_send_command(
-					&midex->led_commands_urb[1],
-					7 - led_nr, false, false);
+				&midex->led_commands_urb[1], 7 - led_nr, false,
+				false);
 		}
 		if (midex->led_state_gfx < 8) {
 			led_nr = midex->led_state_gfx;
 			sb_midex_usb_led_fill_and_send_command(
-					&midex->led_commands_urb[2],
-					led_nr,	true, true);
+				&midex->led_commands_urb[2], led_nr, true,
+				true);
 			sb_midex_usb_led_fill_and_send_command(
-					&midex->led_commands_urb[3],
-					7 - led_nr,	true, false);
+				&midex->led_commands_urb[3], 7 - led_nr, true,
+				false);
 		}
 
 		if (midex->led_state_gfx >= 8) {
@@ -1153,11 +1068,11 @@ static void sb_midex_timer_led_callback(
 		if (midex->led_state_gfx >= 0) {
 			led_nr = midex->led_state_gfx;
 			sb_midex_usb_led_fill_and_send_command(
-					&midex->led_commands_urb[0],
-					led_nr, true, true);
+				&midex->led_commands_urb[0], led_nr, true,
+				true);
 			sb_midex_usb_led_fill_and_send_command(
-					&midex->led_commands_urb[1],
-					7 - led_nr, true, false);
+				&midex->led_commands_urb[1], 7 - led_nr, true,
+				false);
 		}
 		if (midex->led_state_gfx < -2) {
 			/* goto next graphics state */
@@ -1173,11 +1088,11 @@ static void sb_midex_timer_led_callback(
 		if (midex->led_state_gfx >= 0) {
 			led_nr = midex->led_state_gfx;
 			sb_midex_usb_led_fill_and_send_command(
-					&midex->led_commands_urb[0],
-					led_nr, false, true);
+				&midex->led_commands_urb[0], led_nr, false,
+				true);
 			sb_midex_usb_led_fill_and_send_command(
-					&midex->led_commands_urb[1],
-					7 - led_nr, false, false);
+				&midex->led_commands_urb[1], 7 - led_nr, false,
+				false);
 		}
 		if (midex->led_state_gfx < 0) {
 			/* Done with the fancy graphics */
@@ -1190,36 +1105,29 @@ static void sb_midex_timer_led_callback(
 	}
 }
 
-
-static void sb_midex_timer_timing_start(
-		struct sb_midex *midex)
+static void sb_midex_timer_timing_start(struct sb_midex *midex)
 {
 	hrtimer_init(&(midex->timer_timing), CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	midex->timer_timing.function = sb_midex_timer_timing_callback;
 
 	midex->timer_timing_deltat = ktime_set(0, TIMER_PERIOD_TIMING_NS);
-	hrtimer_start(&(midex->timer_timing),
-			midex->timer_timing_deltat, HRTIMER_MODE_REL);
+	hrtimer_start(&(midex->timer_timing), midex->timer_timing_deltat,
+		      HRTIMER_MODE_REL);
 }
 
-
-static void sb_midex_timer_led_start(
-		struct sb_midex *midex)
+static void sb_midex_timer_led_start(struct sb_midex *midex)
 {
 	timer_setup(&(midex->timer_led), sb_midex_timer_led_callback, 0);
 	mod_timer(&(midex->timer_led),
-			jiffies +
-			msecs_to_jiffies(TIMER_PERIOD_LED_INACTIVE_MS));
+		  jiffies + msecs_to_jiffies(TIMER_PERIOD_LED_INACTIVE_MS));
 }
-
 
 /**
  * Init the device by sending some specific commands
  *
  * \pre init_rawmidi and init_usb were successful
  */
-static int sb_midex_init_device(
-		struct sb_midex *midex)
+static int sb_midex_init_device(struct sb_midex *midex)
 {
 	unsigned char *buffer;
 	int err = 0;
@@ -1228,8 +1136,8 @@ static int sb_midex_init_device(
 	usb_anchor_urb(midex->led_replies_urb.urb, &midex->anchor);
 
 	/* Start reading EP6in(led_reply) */
-	err = sb_midex_submit_urb(&midex->led_replies_urb,
-			GFP_KERNEL, __func__);
+	err = sb_midex_submit_urb(&midex->led_replies_urb, GFP_KERNEL,
+				  __func__);
 	if (err < 0)
 		goto init_device_error;
 
@@ -1243,8 +1151,8 @@ static int sb_midex_init_device(
 	buffer[1] = 0x01;
 	midex->led_commands_urb[0].urb->transfer_buffer_length = 2;
 
-	err = sb_midex_submit_urb(&midex->led_commands_urb[0],
-			GFP_KERNEL, __func__);
+	err = sb_midex_submit_urb(&midex->led_commands_urb[0], GFP_KERNEL,
+				  __func__);
 	if (err < 0)
 		goto init_device_error;
 
@@ -1261,25 +1169,21 @@ init_device_error:
 /**
  * Allocate urbs, allocate dma buffers and fill the urb with the right data
  */
-static int sb_midex_init_usb(
-		struct sb_midex *midex)
+static int sb_midex_init_usb(struct sb_midex *midex)
 {
 	int urb_index;
 	int err = usb_set_interface(midex->usbdev, 0, 0);
 
 	if (err < 0) {
 		dev_err(&midex->usbdev->dev,
-				SB_MIDEX_PREFIX "usb_set_interface failed\n");
+			SB_MIDEX_PREFIX "usb_set_interface failed\n");
 		return err;
 	}
 
 	/* alloc urbs */
 	midex->led_replies_urb.urb = sb_midex_urb_and_buffer_alloc(
-			midex,
-			usb_rcvintpipe(midex->usbdev, 0x86),
-			8,
-			sb_midex_usb_led_input_complete,
-			&midex->led_replies_urb);
+		midex, usb_rcvintpipe(midex->usbdev, 0x86), 8,
+		sb_midex_usb_led_input_complete, &midex->led_replies_urb);
 
 	if (!midex->led_replies_urb.urb)
 		goto init_usb_error;
@@ -1287,9 +1191,7 @@ static int sb_midex_init_usb(
 	for (urb_index = 0; urb_index < SB_MIDEX_NUM_URBS_PER_EP; ++urb_index) {
 		midex->led_commands_urb[urb_index].urb =
 			sb_midex_urb_and_buffer_alloc(
-				midex,
-				usb_sndintpipe(midex->usbdev, 0x06),
-				8,
+				midex, usb_sndintpipe(midex->usbdev, 0x06), 8,
 				sb_midex_usb_led_output_complete,
 				&midex->led_commands_urb[urb_index]);
 		if (!midex->led_commands_urb[urb_index].urb)
@@ -1297,8 +1199,7 @@ static int sb_midex_init_usb(
 
 		midex->timing_out_urb[urb_index].urb =
 			sb_midex_urb_and_buffer_alloc(
-				midex,
-				usb_sndintpipe(midex->usbdev, 0x02),
+				midex, usb_sndintpipe(midex->usbdev, 0x02),
 				SB_MIDEX_URB_BUFFER_SIZE,
 				sb_midex_usb_timing_output_complete,
 				&midex->timing_out_urb[urb_index]);
@@ -1307,8 +1208,7 @@ static int sb_midex_init_usb(
 
 		midex->midi_in.urbs[urb_index].urb =
 			sb_midex_urb_and_buffer_alloc(
-				midex,
-				usb_rcvintpipe(midex->usbdev, 0x82),
+				midex, usb_rcvintpipe(midex->usbdev, 0x82),
 				SB_MIDEX_URB_BUFFER_SIZE,
 				sb_midex_usb_midi_input_complete,
 				&midex->midi_in.urbs[urb_index]);
@@ -1317,8 +1217,7 @@ static int sb_midex_init_usb(
 
 		midex->midi_out.urbs[urb_index].urb =
 			sb_midex_urb_and_buffer_alloc(
-				midex,
-				usb_sndintpipe(midex->usbdev, 0x04),
+				midex, usb_sndintpipe(midex->usbdev, 0x04),
 				SB_MIDEX_URB_BUFFER_SIZE,
 				sb_midex_usb_midi_output_complete,
 				&midex->midi_out.urbs[urb_index]);
@@ -1332,41 +1231,35 @@ init_usb_error:
 	return -ENOMEM;
 }
 
-
 /**
  * Get the input/output substreams and store them in our ports list.
  * Also set the substream name
  */
-static void sb_midex_init_rawmidi_substreams(
-		struct sb_midex *midex)
+static void sb_midex_init_rawmidi_substreams(struct sb_midex *midex)
 {
 	struct snd_rawmidi_substream *substream;
 	/* set name and reference in midex struct */
 
 	list_for_each_entry(
-			substream,
-			&midex->rmidi->streams[SNDRV_RAWMIDI_STREAM_OUTPUT]
-								   .substreams,
-			list) {
+		substream,
+		&midex->rmidi->streams[SNDRV_RAWMIDI_STREAM_OUTPUT].substreams,
+		list) {
 		midex->midi_out.ports[substream->number].substream = substream;
 		snprintf(substream->name, sizeof(substream->name),
-				"MIDEX Port %d", substream->number + 1);
+			 "MIDEX Port %d", substream->number + 1);
 	}
 
 	list_for_each_entry(
-			substream,
-			&midex->rmidi->streams[SNDRV_RAWMIDI_STREAM_INPUT]
-								   .substreams,
-			list) {
+		substream,
+		&midex->rmidi->streams[SNDRV_RAWMIDI_STREAM_INPUT].substreams,
+		list) {
 		midex->midi_in.ports[substream->number].substream = substream;
 		snprintf(substream->name, sizeof(substream->name),
-				"MIDEX Port %d", substream->number + 1);
+			 "MIDEX Port %d", substream->number + 1);
 	}
 }
 
-
-static int sb_midex_init_rawmidi(
-		struct sb_midex *midex)
+static int sb_midex_init_rawmidi(struct sb_midex *midex)
 {
 	int ret;
 	struct snd_rawmidi *rmidi;
@@ -1386,13 +1279,10 @@ static int sb_midex_init_rawmidi(
 		break;
 	}
 
-	ret = snd_rawmidi_new(
-			midex->card,
-			midex->card->shortname,
-			0,
-			midex->midi_out.num_ports, /* #outputs */
-			midex->midi_in.num_ports, /* #inputs */
-			&rmidi);
+	ret = snd_rawmidi_new(midex->card, midex->card->shortname, 0,
+			      midex->midi_out.num_ports, /* #outputs */
+			      midex->midi_in.num_ports, /* #inputs */
+			      &rmidi);
 
 	if (ret < 0)
 		return ret;
@@ -1404,11 +1294,11 @@ static int sb_midex_init_rawmidi(
 
 	rmidi->info_flags |= SNDRV_RAWMIDI_INFO_OUTPUT;
 	snd_rawmidi_set_ops(rmidi, SNDRV_RAWMIDI_STREAM_OUTPUT,
-			&sb_midex_raw_midi_output);
+			    &sb_midex_raw_midi_output);
 
 	rmidi->info_flags |= SNDRV_RAWMIDI_INFO_INPUT;
 	snd_rawmidi_set_ops(rmidi, SNDRV_RAWMIDI_STREAM_INPUT,
-			&sb_midex_raw_midi_input);
+			    &sb_midex_raw_midi_input);
 
 	midex->rmidi = rmidi;
 
@@ -1416,7 +1306,6 @@ static int sb_midex_init_rawmidi(
 
 	return 0;
 }
-
 
 /**
  * Determine what type of MIDEX is connected.
@@ -1426,8 +1315,7 @@ static int sb_midex_init_rawmidi(
  * Maybe the MIDEX3 has the same protocol as the MIDEX8,
  * let me know if that is the case and what PID.
  */
-static void sb_midex_init_determine_type_and_name(
-		struct sb_midex *midex)
+static void sb_midex_init_determine_type_and_name(struct sb_midex *midex)
 {
 	char usb_path[32];
 
@@ -1436,8 +1324,7 @@ static void sb_midex_init_determine_type_and_name(
 	switch (le16_to_cpu(midex->usbdev->descriptor.idProduct)) {
 	case SB_MIDEX8_PID_OLD_FIRMWARE:
 		dev_info(&midex->usbdev->dev,
-				SB_MIDEX_PREFIX
-				"Firmware update not implemented.");
+			 SB_MIDEX_PREFIX "Firmware update not implemented.");
 		midex->card_type = SB_MIDEX_TYPE_8;
 		break;
 	case SB_MIDEX8_PID_NEW_FIRMWARE:
@@ -1445,8 +1332,7 @@ static void sb_midex_init_determine_type_and_name(
 		break;
 	case SB_MIDEX8_PID_NO_FIRMWARE:
 		dev_info(&midex->usbdev->dev,
-				SB_MIDEX_PREFIX
-				"Firmware update not implemented.");
+			 SB_MIDEX_PREFIX "Firmware update not implemented.");
 		midex->card_type = SB_MIDEX_TYPE_8;
 		break;
 	case SB_MIDEX3_PID_NEW_FIRMWARE:
@@ -1454,53 +1340,44 @@ static void sb_midex_init_determine_type_and_name(
 		break;
 	case SB_MIDEX3_PID_NO_FIRMWARE:
 		dev_info(&midex->usbdev->dev,
-				SB_MIDEX_PREFIX
-				"Firmware update not implemented.");
+			 SB_MIDEX_PREFIX "Firmware update not implemented.");
 		midex->card_type = SB_MIDEX_TYPE_3;
 		break;
 	default:
 		/* Unknown. Figure out what PID/config etc...*/
 		strscpy(midex->card->shortname, "MIDEXxxx",
-				sizeof(midex->card->shortname));
+			sizeof(midex->card->shortname));
 		strscpy(midex->card->longname, "Unknown MIDEXxxx",
-				sizeof(midex->card->longname));
+			sizeof(midex->card->longname));
 		midex->card_type = SB_MIDEX_TYPE_UNKNOWN;
 		break;
 	}
 
-	if (midex->usbdev->product != NULL)
-	{
+	if (midex->usbdev->product != NULL) {
 		strscpy(midex->card->shortname, midex->usbdev->product,
-				sizeof(midex->card->shortname));
+			sizeof(midex->card->shortname));
 		/* Device name from USB descriptor: */
 		snprintf(midex->card->longname, sizeof(midex->card->longname),
-				"%s at %s",
-				midex->usbdev->product, /* as given by device */
-				usb_path);
+			 "%s at %s",
+			 midex->usbdev->product, /* as given by device */
+			 usb_path);
 	}
 
-	dev_info(&midex->usbdev->dev,
-			SB_MIDEX_PREFIX
-			"Recognized MIDEX: %s",
-			midex->card->longname
-			);
+	dev_info(&midex->usbdev->dev, SB_MIDEX_PREFIX "Recognized MIDEX: %s",
+		 midex->card->longname);
 }
 
-
-static void sb_midex_init_midex_urb(
-		struct sb_midex *midex,
-		struct sb_midex_urb_ctx *urbctx)
+static void sb_midex_init_midex_urb(struct sb_midex *midex,
+				    struct sb_midex_urb_ctx *urbctx)
 {
 	urbctx->active = false;
 	urbctx->urb = NULL;
 	urbctx->midex = midex;
 }
 
-
-static struct sb_midex *sb_midex_init_midex_data_struct(
-	struct usb_interface *interface,
-	struct snd_card *card,
-	unsigned int card_index)
+static struct sb_midex *
+sb_midex_init_midex_data_struct(struct usb_interface *interface,
+				struct snd_card *card, unsigned int card_index)
 {
 	struct sb_midex *midex;
 	int i;
@@ -1524,12 +1401,11 @@ static struct sb_midex *sb_midex_init_midex_data_struct(
 	spin_lock_init(&(midex->midi_in.lock));
 	spin_lock_init(&(midex->timer_timing_lock));
 
-	tasklet_init(&midex->midi_out_tasklet,
-			sb_midex_usb_midi_output_tasklet, (unsigned long)midex);
+	tasklet_init(&midex->midi_out_tasklet, sb_midex_usb_midi_output_tasklet,
+		     (unsigned long)midex);
 
 	init_waitqueue_head(&midex->drain_wait);
 	midex->drain_urbs = 0;
-
 
 	/* clear ports mem */
 	for (i = 0; i < 8; ++i) {
@@ -1555,10 +1431,8 @@ static struct sb_midex *sb_midex_init_midex_data_struct(
 	return midex;
 }
 
-
-static void sb_midex_free_usb_related_resources(
-		struct sb_midex *midex,
-		struct usb_interface *interface)
+static void sb_midex_free_usb_related_resources(struct sb_midex *midex,
+						struct usb_interface *interface)
 {
 	int urb_index;
 	/* usb_kill_urb not necessary, urb is aborted automatically */
@@ -1566,18 +1440,17 @@ static void sb_midex_free_usb_related_resources(
 	sb_midex_urb_and_buffer_free(midex, midex->led_replies_urb.urb, 8);
 
 	for (urb_index = 0; urb_index < SB_MIDEX_NUM_URBS_PER_EP; ++urb_index) {
+		sb_midex_urb_and_buffer_free(
+			midex, midex->led_commands_urb[urb_index].urb, 8);
+		sb_midex_urb_and_buffer_free(
+			midex, midex->timing_out_urb[urb_index].urb,
+			SB_MIDEX_URB_BUFFER_SIZE);
 		sb_midex_urb_and_buffer_free(midex,
-				midex->led_commands_urb[urb_index].urb,
-				8);
-		sb_midex_urb_and_buffer_free(midex,
-				midex->timing_out_urb[urb_index].urb,
-				SB_MIDEX_URB_BUFFER_SIZE);
-		sb_midex_urb_and_buffer_free(midex,
-				midex->midi_in.urbs[urb_index].urb,
-				SB_MIDEX_URB_BUFFER_SIZE);
-		sb_midex_urb_and_buffer_free(midex,
-				midex->midi_out.urbs[urb_index].urb,
-				SB_MIDEX_URB_BUFFER_SIZE);
+					     midex->midi_in.urbs[urb_index].urb,
+					     SB_MIDEX_URB_BUFFER_SIZE);
+		sb_midex_urb_and_buffer_free(
+			midex, midex->midi_out.urbs[urb_index].urb,
+			SB_MIDEX_URB_BUFFER_SIZE);
 	}
 
 	if (midex->intf) {
@@ -1586,13 +1459,11 @@ static void sb_midex_free_usb_related_resources(
 	}
 }
 
-
 /******************************************************************************
  * Module functions
  ******************************************************************************/
 
-static int sb_midex_init_driver(
-		struct sb_midex *midex)
+static int sb_midex_init_driver(struct sb_midex *midex)
 {
 	int ret;
 
@@ -1613,10 +1484,8 @@ static int sb_midex_init_driver(
 	return 0;
 }
 
-
-static int sb_midex_drv_probe(
-		struct usb_interface *interface,
-		const struct usb_device_id *usb_id)
+static int sb_midex_drv_probe(struct usb_interface *interface,
+			      const struct usb_device_id *usb_id)
 {
 	struct snd_card *card;
 	struct sb_midex *midex;
@@ -1634,13 +1503,10 @@ static int sb_midex_drv_probe(
 		return -ENOENT;
 	}
 
-	err = snd_card_new(
-			&interface->dev,
-			index[card_index],
-			id[card_index],
-			THIS_MODULE,
-			sizeof(struct sb_midex), /* sizeof(*midex), or? */
-			&card);
+	err = snd_card_new(&interface->dev, index[card_index], id[card_index],
+			   THIS_MODULE,
+			   sizeof(struct sb_midex), /* sizeof(*midex), or? */
+			   &card);
 
 	if (err < 0) {
 		mutex_unlock(&devices_mutex);
@@ -1678,9 +1544,7 @@ probe_error:
 	return err;
 }
 
-
-static void sb_midex_drv_disconnect(
-		struct usb_interface *interface)
+static void sb_midex_drv_disconnect(struct usb_interface *interface)
 {
 	struct sb_midex *midex = usb_get_intfdata(interface);
 
@@ -1710,14 +1574,12 @@ static void sb_midex_drv_disconnect(
 	mutex_unlock(&devices_mutex);
 }
 
-
 static struct usb_driver sb_midex_driver = {
-	.name =			"snd-usb-midex",
-	.probe =		sb_midex_drv_probe,
-	.disconnect =	sb_midex_drv_disconnect,
-	.id_table =		id_table,
+	.name = "snd-usb-midex",
+	.probe = sb_midex_drv_probe,
+	.disconnect = sb_midex_drv_disconnect,
+	.id_table = id_table,
 };
-
 
 module_usb_driver(sb_midex_driver);
 
