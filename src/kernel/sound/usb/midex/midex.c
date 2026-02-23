@@ -16,6 +16,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/version.h>
 #include <linux/errno.h>
 #include <linux/types.h>
 #include <linux/init.h>
@@ -981,7 +982,11 @@ static int sb_midex_usb_led_fill_and_send_command(struct sb_midex_urb_ctx *ctx,
 
 static void sb_midex_timer_led_callback(struct timer_list *t)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0)
+	struct sb_midex *midex = timer_container_of(midex, t, timer_led);
+#else
 	struct sb_midex *midex = from_timer(midex, t, timer_led);
+#endif
 	unsigned char *buffer;
 	int ret;
 	unsigned char led_nr;
@@ -1107,8 +1112,13 @@ static void sb_midex_timer_led_callback(struct timer_list *t)
 
 static void sb_midex_timer_timing_start(struct sb_midex *midex)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+	hrtimer_setup(&(midex->timer_timing), sb_midex_timer_timing_callback,
+		      CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+#else
 	hrtimer_init(&(midex->timer_timing), CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	midex->timer_timing.function = sb_midex_timer_timing_callback;
+#endif
 
 	midex->timer_timing_deltat = ktime_set(0, TIMER_PERIOD_TIMING_NS);
 	hrtimer_start(&(midex->timer_timing), midex->timer_timing_deltat,
@@ -1551,7 +1561,11 @@ static void sb_midex_drv_disconnect(struct usb_interface *interface)
 	if (!midex)
 		return;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
+	timer_delete_sync(&(midex->timer_led));
+#else
 	del_timer_sync(&(midex->timer_led));
+#endif
 	hrtimer_cancel(&(midex->timer_timing));
 	tasklet_kill(&(midex->midi_out_tasklet));
 
