@@ -1,0 +1,39 @@
+MIDEX firmware blobs for the snd-usb-midex kernel module
+=========================================================
+
+This directory holds the firmware images uploaded by the kernel driver to
+MIDEX devices that boot in their EZ-USB "no firmware" PID. See
+../../../doc/firmware_upload_process.md for the full protocol and source
+analysis.
+
+Layout
+------
+
+  midex8.hex / midex8.fw     PID 0x1000 -> 0x1001 (MIDEX8 r1, AN2131)
+  midex8r2.hex / midex8r2.fw PID 0x1010 -> 0x1001 (MIDEX8 r2, CY7C646 FX)
+  midex3.hex / midex3.fw     PID 0x1100 -> 0x1101 (MIDEX3, CY7C646 FX)
+  regenerate.sh              Maintainer-only: rebuilds the .hex and .fw
+
+The .fw files are the kernel-ready packed-record format produced by
+scripts/ihex2fw and consumed by request_ihex_firmware() inside the in-tree
+ezusb helper (drivers/usb/misc/ezusb.c). Both the .hex sources and the .fw
+outputs are checked in so end users do not need ihex2fw at install time.
+
+../build.sh -i installs the three .fw files to /lib/firmware/midex/.
+The driver requests them by the names "midex/midex8.fw" etc.
+
+Regenerating
+------------
+
+If a primary source under ../../../doc/firmware/ changes, run:
+
+    ./regenerate.sh
+
+regenerate.sh needs the `ihex2fw` host tool. The easiest way to get it:
+
+    wget -O /tmp/ihex2fw.c \
+      https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/tools/firmware/ihex2fw.c
+    cc -O2 -o ~/.local/bin/ihex2fw /tmp/ihex2fw.c
+
+regenerate.sh also accepts -k <kernel-source-dir> to pick up a tree-local
+scripts/ihex2fw or tools/firmware/ihex2fw build.

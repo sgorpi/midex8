@@ -35,6 +35,8 @@
 *.i*86
 *.x86_64
 *.hex
+# ...but the kernel-firmware sources are checked in
+!src/kernel/firmware/*.hex
 
 # Debug files
 *.dSYM/
