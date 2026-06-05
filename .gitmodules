@@ -1,0 +1,3 @@
+[submodule "src/midex-class-firmware"]
+	path = src/midex-class-firmware
+	url = git@github.com:sgorpi/midex-class-firmware.git
