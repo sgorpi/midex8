@@ -15,9 +15,9 @@ Options:
 	-c  run checkpatch.pl on source file for code style checks
 	-d	install kernel sources and build dependencies
 	-h	this help
-	-i	install module in /lib/modules/`uname -r`
+	-i	install module in /lib/modules/`uname -r` and firmware in /lib/firmware/midex/
 	-k	set the kernel source directory if autodetect doesn't find it
-	-u	uninstall module from /lib/modules/`uname -r`
+	-u	uninstall module from /lib/modules/`uname -r` and firmware from /lib/firmware/midex/
 "
 }
 
@@ -98,7 +98,10 @@ fi
 ##############################################
 ### The actual compilation:
 ##############################################
-
+#if [ ! -e /usr/lib/modules/$(uname -r)/build/vmlinux -a -e /sys/kernel/btf/vmlinux ]
+#then
+#	sudo ln -s /sys/kernel/btf/vmlinux /usr/lib/modules/$(uname -r)/build/
+#fi
 
 if [ -n "$DO_CHECKPATCH" -a -e $KERNEL_SOURCE_DIR/scripts/checkpatch.pl ]
 then
@@ -112,13 +115,39 @@ fi
 make -C $KERNEL_SOURCE_DIR M=$MODULE_DIR/sound/usb/midex/
 
 ##############################################
+### Firmware-upload prerequisite check
+##############################################
+# The driver uses the in-tree EZ-USB helper (drivers/usb/misc/ezusb.c,
+# CONFIG_USB_EZUSB_FX2). If the running kernel doesn't ship it, the module
+# still builds but firmware upload for no-firmware MIDEX devices will be
+# a no-op at runtime.
+RUNNING_CFG=/boot/config-$(uname -r)
+if [ -r "$RUNNING_CFG" ] && ! grep -q '^CONFIG_USB_EZUSB_FX2=[ym]' "$RUNNING_CFG"
+then
+	echo ""
+	echo "### Note: CONFIG_USB_EZUSB_FX2 is not enabled in $RUNNING_CFG."
+	echo "### Firmware upload to no-firmware MIDEX devices will be disabled."
+	echo "### Enable the ezusb helper (modprobe ezusb, or rebuild your kernel)"
+	echo "### to upload firmware automatically."
+fi
+
+##############################################
 ### install/remove module from /lib/modules
 ##############################################
+
+FIRMWARE_DIR=/lib/firmware/midex
+FIRMWARE_FILES="midex8.fw midex8r2.fw midex3.fw"
 
 if [ -n "$DO_UNINSTALL" ]
 then
 	echo "Removing snd-usb-midex.ko from /lib/modules/`uname -r`/kernel/sound/usb/midex/"
 	sudo rm /lib/modules/`uname -r`/kernel/sound/usb/midex/snd-usb-midex.ko
+
+	echo "Removing firmware from $FIRMWARE_DIR/"
+	for fw in $FIRMWARE_FILES; do
+		sudo rm -f $FIRMWARE_DIR/$fw
+	done
+	sudo rmdir --ignore-fail-on-non-empty $FIRMWARE_DIR 2>/dev/null || true
 fi
 
 if [ -n "$DO_INSTALL" ]
@@ -127,7 +156,12 @@ then
 	sudo mkdir -p /lib/modules/`uname -r`/kernel/sound/usb/midex/
 	sudo cp $MODULE_DIR/sound/usb/midex/snd-usb-midex.ko /lib/modules/`uname -r`/kernel/sound/usb/midex/
 
-	
+	echo "Installing firmware blobs in $FIRMWARE_DIR/"
+	sudo mkdir -p $FIRMWARE_DIR
+	for fw in $FIRMWARE_FILES; do
+		sudo cp $MODULE_DIR/firmware/$fw $FIRMWARE_DIR/
+	done
+
 	if [ -e /etc/modules-load.d/ ]
 	then
 		echo "Adding module to /etc/modules-load.d/ ..."

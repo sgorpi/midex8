@@ -29,6 +29,11 @@
 
 #include <linux/usb.h>
 #include <linux/usb/audio.h>
+#if IS_REACHABLE(CONFIG_USB_EZUSB_FX2)
+#include <linux/usb/ezusb.h>
+#else
+#warning "CONFIG_USB_EZUSB_FX2 unavailable: snd-usb-midex firmware upload disabled at runtime"
+#endif
 
 #include <linux/wait.h>
 #include <linux/ktime.h>
@@ -55,20 +60,31 @@
 #define TIMER_PERIOD_LED_ACTIVE_MS 150
 
 /*
- * VID is always 0x0a4e
- * For Midex 8, PID can be 0x1001, or 0x1010 (after some device reset)
- * Theoretically, we might also support the midex3, but I don't have one.
- * Add it below.
+ * VID is always 0x0a4e.
  *
- * Also, PID1 seems to imply: reflash firmware
+ * PIDs and meaning (see doc/firmware_upload_process.md for the full picture):
+ *   0x1000  MIDEX8 r1 (AN2131)        - no firmware, needs upload
+ *   0x1010  MIDEX8 r2 (CY7C646 FX)    - no firmware, needs upload
+ *   0x1100  MIDEX3   (CY7C646 FX)    - no firmware, needs upload
+ *   0x1001  MIDEX8 r1/r2 operational
+ *   0x1101  MIDEX3 operational
+ *
+ * Loader-PID devices have their firmware uploaded via the in-tree EZ-USB
+ * helper (ezusb.ko); they then renumerate to the operational PID and are
+ * probed again as a fresh device.
  */
 
-#define SB_MIDEX8_PID_OLD_FIRMWARE 0x1010
-#define SB_MIDEX8_PID_NEW_FIRMWARE 0x1001
-#define SB_MIDEX8_PID_NO_FIRMWARE 0x1000
+#define SB_MIDEX8_PID_NO_FIRMWARE   0x1000
+#define SB_MIDEX8R2_PID_NO_FIRMWARE 0x1010
+#define SB_MIDEX8_PID_NEW_FIRMWARE  0x1001
 
-#define SB_MIDEX3_PID_NO_FIRMWARE 0x1100
+#define SB_MIDEX3_PID_NO_FIRMWARE  0x1100
 #define SB_MIDEX3_PID_NEW_FIRMWARE 0x1101
+
+/* Firmware paths (under /lib/firmware/) for request_ihex_firmware(). */
+#define SB_MIDEX_FW_MIDEX8   "midex/midex8.fw"
+#define SB_MIDEX_FW_MIDEX8R2 "midex/midex8r2.fw"
+#define SB_MIDEX_FW_MIDEX3   "midex/midex3.fw"
 
 /*******************************************************************
  * Type definitions
@@ -76,8 +92,8 @@
 
 static struct usb_device_id id_table[] = {
 	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID_NEW_FIRMWARE) },
-	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID_OLD_FIRMWARE) },
 	{ USB_DEVICE(0x0a4e, SB_MIDEX8_PID_NO_FIRMWARE) },
+	{ USB_DEVICE(0x0a4e, SB_MIDEX8R2_PID_NO_FIRMWARE) },
 	{ USB_DEVICE(0x0a4e, SB_MIDEX3_PID_NEW_FIRMWARE) },
 	{ USB_DEVICE(0x0a4e, SB_MIDEX3_PID_NO_FIRMWARE) },
 	{},
@@ -1318,12 +1334,8 @@ static int sb_midex_init_rawmidi(struct sb_midex *midex)
 }
 
 /**
- * Determine what type of MIDEX is connected.
- * Depending on PID we can determine what firmware version the device is
- * running. However, firmware updates are not supported at the moment.
- *
- * Maybe the MIDEX3 has the same protocol as the MIDEX8,
- * let me know if that is the case and what PID.
+ * Determine what type of MIDEX is connected by its (operational) PID.
+ * Loader PIDs are handled earlier in probe and never reach this function.
  */
 static void sb_midex_init_determine_type_and_name(struct sb_midex *midex)
 {
@@ -1332,25 +1344,10 @@ static void sb_midex_init_determine_type_and_name(struct sb_midex *midex)
 	usb_make_path(midex->usbdev, usb_path, sizeof(usb_path));
 
 	switch (le16_to_cpu(midex->usbdev->descriptor.idProduct)) {
-	case SB_MIDEX8_PID_OLD_FIRMWARE:
-		dev_info(&midex->usbdev->dev,
-			 SB_MIDEX_PREFIX "Firmware update not implemented.");
-		midex->card_type = SB_MIDEX_TYPE_8;
-		break;
 	case SB_MIDEX8_PID_NEW_FIRMWARE:
 		midex->card_type = SB_MIDEX_TYPE_8;
 		break;
-	case SB_MIDEX8_PID_NO_FIRMWARE:
-		dev_info(&midex->usbdev->dev,
-			 SB_MIDEX_PREFIX "Firmware update not implemented.");
-		midex->card_type = SB_MIDEX_TYPE_8;
-		break;
 	case SB_MIDEX3_PID_NEW_FIRMWARE:
-		midex->card_type = SB_MIDEX_TYPE_3;
-		break;
-	case SB_MIDEX3_PID_NO_FIRMWARE:
-		dev_info(&midex->usbdev->dev,
-			 SB_MIDEX_PREFIX "Firmware update not implemented.");
 		midex->card_type = SB_MIDEX_TYPE_3;
 		break;
 	default:
@@ -1473,6 +1470,67 @@ static void sb_midex_free_usb_related_resources(struct sb_midex *midex,
  * Module functions
  ******************************************************************************/
 
+static bool allow_midex3_firmware;
+module_param(allow_midex3_firmware, bool, 0644);
+MODULE_PARM_DESC(allow_midex3_firmware,
+		 "Allow uploading the (untested) MIDEX3 firmware on PID 0x1100. Default off.");
+
+/**
+ * Upload firmware to a no-firmware MIDEX device using the in-tree EZ-USB
+ * helper (drivers/usb/misc/ezusb.c). On success the device renumerates to
+ * its operational PID and is probed again. -ENODEV from the helper is the
+ * expected renumeration race (see doc/firmware_upload_process.md) and is
+ * treated as success.
+ */
+static int sb_midex_upload_firmware(struct usb_device *udev, u16 pid)
+{
+	const char *fw_path;
+#if IS_REACHABLE(CONFIG_USB_EZUSB_FX2)
+	int ret;
+#endif
+
+	switch (pid) {
+	case SB_MIDEX8_PID_NO_FIRMWARE:
+		fw_path = SB_MIDEX_FW_MIDEX8;
+		break;
+	case SB_MIDEX8R2_PID_NO_FIRMWARE:
+		fw_path = SB_MIDEX_FW_MIDEX8R2;
+		break;
+	case SB_MIDEX3_PID_NO_FIRMWARE:
+		if (!allow_midex3_firmware) {
+			dev_warn(&udev->dev,
+				 SB_MIDEX_PREFIX "PID 0x%04x: MIDEX3 firmware has not been verified on real hardware. Set module parameter allow_midex3_firmware=1 to proceed.\n",
+				 pid);
+			return -EPERM;
+		}
+		fw_path = SB_MIDEX_FW_MIDEX3;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+#if IS_REACHABLE(CONFIG_USB_EZUSB_FX2)
+	dev_info(&udev->dev,
+		 SB_MIDEX_PREFIX "Uploading firmware \"%s\" to PID 0x%04x...\n",
+		 fw_path, pid);
+	ret = ezusb_fx1_ihex_firmware_download(udev, fw_path);
+	if (ret == -ENODEV)
+		ret = 0;
+	if (ret)
+		dev_err(&udev->dev,
+			SB_MIDEX_PREFIX "Firmware upload failed: %d\n", ret);
+	else
+		dev_info(&udev->dev,
+			 SB_MIDEX_PREFIX "Firmware upload OK; device will renumerate.\n");
+	return ret;
+#else
+	dev_err(&udev->dev,
+		SB_MIDEX_PREFIX "Firmware upload requested for PID 0x%04x but CONFIG_USB_EZUSB_FX2 is not reachable. Build/load the ezusb module and replug the device.\n",
+		pid);
+	return -EOPNOTSUPP;
+#endif
+}
+
 static int sb_midex_init_driver(struct sb_midex *midex)
 {
 	int ret;
@@ -1497,10 +1555,23 @@ static int sb_midex_init_driver(struct sb_midex *midex)
 static int sb_midex_drv_probe(struct usb_interface *interface,
 			      const struct usb_device_id *usb_id)
 {
+	struct usb_device *udev = interface_to_usbdev(interface);
+	u16 pid = le16_to_cpu(udev->descriptor.idProduct);
 	struct snd_card *card;
 	struct sb_midex *midex;
 	unsigned int card_index;
 	int err;
+
+	/* Loader PIDs: upload firmware then let the renumerated device
+	 * (which appears with its operational PID) be probed fresh.
+	 */
+	switch (pid) {
+	case SB_MIDEX8_PID_NO_FIRMWARE:
+	case SB_MIDEX8R2_PID_NO_FIRMWARE:
+	case SB_MIDEX3_PID_NO_FIRMWARE:
+		sb_midex_upload_firmware(udev, pid);
+		return -ENODEV;
+	}
 
 	mutex_lock(&devices_mutex);
 
@@ -1598,6 +1669,9 @@ static struct usb_driver sb_midex_driver = {
 module_usb_driver(sb_midex_driver);
 
 MODULE_DEVICE_TABLE(usb, id_table);
+MODULE_FIRMWARE(SB_MIDEX_FW_MIDEX8);
+MODULE_FIRMWARE(SB_MIDEX_FW_MIDEX8R2);
+MODULE_FIRMWARE(SB_MIDEX_FW_MIDEX3);
 MODULE_AUTHOR("Hedde Bosman, sgorpi@gmail.com");
 MODULE_DESCRIPTION("Steinberg MIDEX driver");
 MODULE_LICENSE("GPL");
