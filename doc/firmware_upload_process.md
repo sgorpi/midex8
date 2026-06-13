@@ -313,16 +313,25 @@ counts in `fw.json`.
   2002 installers `Midex8_V1_80.exe` / `updmros.exe`). The Mac kext is
   the **only available source** for MIDEX3 firmware in this repo.
 
-### Memory-map differences confirm separate chip targets
+### Memory-map differences show the images are device-specific
 
 All MIDEX8 r1 records fit in `0x0000-0x1508` (well inside the AN2131
-8 KB RAM), as do the MIDEX3 records (max `0x1692`). The MIDEX8 r2
-firmware additionally contains a single 1-byte write to `0x7FE5` — that
-address only exists on the CY7C646 FX family (FX configuration register
-region). Uploading `midex8r2_firmware` to an AN2131 chip would silently
-write to an invalid address; conversely, an AN2131-targeted blob will
-miss the FX register initialisation needed on r2. The blobs are
-genuinely device-specific and cannot be substituted for each other.
+8 KB RAM), as do the MIDEX3 records (max `0x1692`). The blobs are
+device-specific and cannot be substituted for each other — but the
+distinguishing factor is the **external MIDI/UART hardware and port
+count** each image drives, *not* the EZ-USB chip variant.
+
+> **Correction (2026-05-30):** an earlier version of this note claimed the
+> MIDEX8 r2 image's write to XDATA `0x7FE5` proved a CY7C646-FX-only
+> register and therefore a separate chip target. That is **wrong**.
+> `0x7FE5` is **AUTODATA** (the autopointer data register), and diffing the
+> two TRMs shows the AN2131 and CY7C646 FX have **byte-identical `0x7Fxx`
+> register maps** (the AN2131QC also has the autopointer / fast-transfer
+> block — see AN2131 TRM §1.14). So register usage does **not** distinguish
+> the two chips, and the EZ-USB MCU variant of MIDEX3 **cannot be confirmed
+> from firmware alone** — definitive chip ID needs the physical PCB chip
+> marking or the loader-mode silicon ID. The images remain device-specific
+> because of their differing external UART layout / MIDI port count.
 
 ### Outcome
 
