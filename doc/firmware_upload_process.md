@@ -499,8 +499,20 @@ relevant binaries** in Ghidra:
       execution (curiosity only — not needed for the kernel implementation).
 - [x] **Implement upload in
       [src/kernel/sound/usb/midex/midex.c](../src/kernel/sound/usb/midex/midex.c)**.
-      The driver now binds to the loader PIDs and delegates to the in-tree
-      EZ-USB helper (`ezusb_fx1_ihex_firmware_download`) using the
-      pre-built blobs in [src/kernel/firmware/](../src/kernel/firmware/).
-      MIDEX3 (0x1100) is gated behind `allow_midex3_firmware=1` until
-      hardware confirms the Mac-derived blob works.
+      The driver binds to the loader PIDs and uploads with the **single-stage
+      `0xA0` flat loop** described above (`sb_midex_upload_firmware` /
+      `sb_midex_fw_write`), using the pre-built blobs in
+      [src/kernel/firmware/](../src/kernel/firmware/). MIDEX3 (0x1100) is gated
+      behind `allow_midex3_firmware=1` until hardware confirms the Mac-derived
+      blob works.
+
+      > **Note:** an earlier version delegated to the in-tree EZ-USB helper
+      > `ezusb_fx1_ihex_firmware_download`. That **fails on MIDEX8 r2**: its
+      > two-pass download writes addresses above `0x1B3F` with request `0xA3`
+      > ("external RAM", assuming a resident second-stage loader), and the r2
+      > image's write to the `0x7FE5` AUTODATA SFR then stalls (`-EPIPE`). The
+      > flat `0xA0` form (verified on r1 and r2) avoids this. Also note the
+      > final CPUCS=0 release returns **`-ETIMEDOUT`** in-kernel (not the
+      > `-ENODEV` the libusb tool sees), because the device renumerates before
+      > the control transfer's status stage completes — the driver treats the
+      > disconnect-class errors as success.
