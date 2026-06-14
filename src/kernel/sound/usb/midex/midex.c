@@ -29,11 +29,8 @@
 
 #include <linux/usb.h>
 #include <linux/usb/audio.h>
-#if IS_REACHABLE(CONFIG_USB_EZUSB_FX2)
-#include <linux/usb/ezusb.h>
-#else
-#warning "CONFIG_USB_EZUSB_FX2 unavailable: snd-usb-midex firmware upload disabled at runtime"
-#endif
+#include <linux/firmware.h>
+#include <linux/ihex.h>
 
 #include <linux/wait.h>
 #include <linux/ktime.h>
@@ -69,9 +66,10 @@
  *   0x1001  MIDEX8 r1/r2 operational
  *   0x1101  MIDEX3 operational
  *
- * Loader-PID devices have their firmware uploaded via the in-tree EZ-USB
- * helper (ezusb.ko); they then renumerate to the operational PID and are
- * probed again as a fresh device.
+ * Loader-PID devices have their firmware uploaded via a single-stage 0xA0
+ * "Anchor Download" (see sb_midex_upload_firmware and
+ * doc/firmware_upload_process.md); they then renumerate to the operational
+ * PID and are probed again as a fresh device.
  */
 
 #define SB_MIDEX8_PID_NO_FIRMWARE   0x1000
@@ -85,6 +83,23 @@
 #define SB_MIDEX_FW_MIDEX8   "midex/midex8.fw"
 #define SB_MIDEX_FW_MIDEX8R2 "midex/midex8r2.fw"
 #define SB_MIDEX_FW_MIDEX3   "midex/midex3.fw"
+
+/*
+ * EZ-USB "Anchor Download" (vendor request 0xA0): while the 8051 is held in
+ * reset, the on-chip ROM loader writes the payload into 8051 RAM/SFRs. CPUCS
+ * lives at 0x7F92 and its LSB is the reset line (1 = halt, 0 = run).
+ */
+#define SB_MIDEX_CPUCS_ADDR    0x7F92
+#define SB_MIDEX_FW_REQ        0xA0
+#define SB_MIDEX_FW_REQTYPE    (USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE)
+#define SB_MIDEX_FW_MAX_CHUNK  64   /* 0xA0 wLength ceiling */
+#define SB_MIDEX_FW_TIMEOUT_MS 5000
+/*
+ * The final CPUCS=0 write boots the firmware, which renumerates the device
+ * mid-transfer, so the request's status stage never completes. Use a short
+ * timeout so probe doesn't stall waiting for a round-trip that won't happen.
+ */
+#define SB_MIDEX_FW_RELEASE_MS 1000
 
 /*******************************************************************
  * Type definitions
@@ -1475,19 +1490,107 @@ module_param(allow_midex3_firmware, bool, 0644);
 MODULE_PARM_DESC(allow_midex3_firmware,
 		 "Allow uploading the (untested) MIDEX3 firmware on PID 0x1100. Default off.");
 
+/*
+ * Issue one 0xA0 anchor-download control write. @buf must be a DMA-capable
+ * scratch buffer of at least @len bytes (the firmware image returned by
+ * request_ihex_firmware() is not guaranteed DMA-safe, so we bounce through it).
+ */
+static int sb_midex_fw_write(struct usb_device *udev, void *buf, u16 addr,
+			     const u8 *data, u16 len, int timeout_ms)
+{
+	int ret;
+
+	memcpy(buf, data, len);
+	ret = usb_control_msg(udev, usb_sndctrlpipe(udev, 0),
+			      SB_MIDEX_FW_REQ, SB_MIDEX_FW_REQTYPE,
+			      addr, 0, buf, len, timeout_ms);
+	if (ret < 0)
+		return ret;
+	return (ret == len) ? 0 : -EIO;
+}
+
 /**
- * Upload firmware to a no-firmware MIDEX device using the in-tree EZ-USB
- * helper (drivers/usb/misc/ezusb.c). On success the device renumerates to
- * its operational PID and is probed again. -ENODEV from the helper is the
- * expected renumeration race (see doc/firmware_upload_process.md) and is
- * treated as success.
+ * Stream a parsed ihex image into a no-firmware MIDEX via a single-stage 0xA0
+ * "Anchor Download": hold the 8051 in reset, write every record into on-chip
+ * RAM/SFRs in file order (so the operational reset vector lands last), then
+ * release the CPU.
+ *
+ * On release the device renumerates to its operational PID before the request's
+ * status stage can complete, so the final write returns a disconnect-class
+ * error (-ENODEV when the host already noticed, -ETIMEDOUT/-EPIPE/-EPROTO/
+ * -ESHUTDOWN when the transfer was torn down); all of these mean success.
+ *
+ * NB: we deliberately do NOT use the generic ezusb two-pass helper
+ * (ezusb_fx1_ihex_firmware_download). Its second pass writes addresses above
+ * 0x1B3F with request 0xA3 ("external RAM", which assumes a resident
+ * second-stage loader); the MIDEX8 r2 image writes the 0x7FE5 AUTODATA SFR,
+ * so that path stalls (-EPIPE) and the upload aborts. The flat 0xA0 form is
+ * verified on real r1 and r2 hardware. See doc/firmware_upload_process.md.
+ */
+static int sb_midex_fw_download(struct usb_device *udev,
+				const struct firmware *fw)
+{
+	const struct ihex_binrec *rec;
+	u8 *buf;
+	u8 reset;
+	int ret;
+
+	buf = kmalloc(SB_MIDEX_FW_MAX_CHUNK, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	reset = 1; /* hold the 8051 in reset */
+	ret = sb_midex_fw_write(udev, buf, SB_MIDEX_CPUCS_ADDR, &reset, 1,
+				SB_MIDEX_FW_TIMEOUT_MS);
+	if (ret) {
+		dev_err(&udev->dev,
+			SB_MIDEX_PREFIX "CPUCS reset assert failed: %d\n", ret);
+		goto out;
+	}
+
+	for (rec = (const struct ihex_binrec *)fw->data; rec;
+	     rec = ihex_next_binrec(rec)) {
+		u16 addr = be32_to_cpu(rec->addr);
+		u16 len = be16_to_cpu(rec->len);
+		u16 off;
+
+		for (off = 0; off < len; off += SB_MIDEX_FW_MAX_CHUNK) {
+			u16 chunk = min_t(u16, len - off, SB_MIDEX_FW_MAX_CHUNK);
+
+			ret = sb_midex_fw_write(udev, buf, addr + off,
+						rec->data + off, chunk,
+						SB_MIDEX_FW_TIMEOUT_MS);
+			if (ret) {
+				dev_err(&udev->dev,
+					SB_MIDEX_PREFIX "write @0x%04x failed: %d\n",
+					addr + off, ret);
+				goto out;
+			}
+		}
+	}
+
+	reset = 0; /* release the 8051 -> firmware boots, device renumerates */
+	ret = sb_midex_fw_write(udev, buf, SB_MIDEX_CPUCS_ADDR, &reset, 1,
+				SB_MIDEX_FW_RELEASE_MS);
+	if (ret == -ENODEV || ret == -ETIMEDOUT || ret == -EPIPE ||
+	    ret == -EPROTO || ret == -ESHUTDOWN)
+		ret = 0; /* expected renumeration race */
+
+out:
+	kfree(buf);
+	return ret;
+}
+
+/**
+ * Pick the right firmware image for a loader-PID MIDEX, fetch it, and hand it
+ * to sb_midex_fw_download(). On success the device renumerates to its
+ * operational PID and is probed again as a fresh device.
  */
 static int sb_midex_upload_firmware(struct usb_device *udev, u16 pid)
 {
+	const struct firmware *fw;
 	const char *fw_path;
-#if IS_REACHABLE(CONFIG_USB_EZUSB_FX2)
 	int ret;
-#endif
 
 	switch (pid) {
 	case SB_MIDEX8_PID_NO_FIRMWARE:
@@ -1509,26 +1612,28 @@ static int sb_midex_upload_firmware(struct usb_device *udev, u16 pid)
 		return -EINVAL;
 	}
 
-#if IS_REACHABLE(CONFIG_USB_EZUSB_FX2)
+	ret = request_ihex_firmware(&fw, fw_path, &udev->dev);
+	if (ret) {
+		dev_err(&udev->dev,
+			SB_MIDEX_PREFIX "request firmware \"%s\" failed: %d\n",
+			fw_path, ret);
+		return ret;
+	}
+
 	dev_info(&udev->dev,
 		 SB_MIDEX_PREFIX "Uploading firmware \"%s\" to PID 0x%04x...\n",
 		 fw_path, pid);
-	ret = ezusb_fx1_ihex_firmware_download(udev, fw_path);
-	if (ret == -ENODEV)
-		ret = 0;
+
+	ret = sb_midex_fw_download(udev, fw);
 	if (ret)
 		dev_err(&udev->dev,
 			SB_MIDEX_PREFIX "Firmware upload failed: %d\n", ret);
 	else
 		dev_info(&udev->dev,
 			 SB_MIDEX_PREFIX "Firmware upload OK; device will renumerate.\n");
+
+	release_firmware(fw);
 	return ret;
-#else
-	dev_err(&udev->dev,
-		SB_MIDEX_PREFIX "Firmware upload requested for PID 0x%04x but CONFIG_USB_EZUSB_FX2 is not reachable. Build/load the ezusb module and replug the device.\n",
-		pid);
-	return -EOPNOTSUPP;
-#endif
 }
 
 static int sb_midex_init_driver(struct sb_midex *midex)
